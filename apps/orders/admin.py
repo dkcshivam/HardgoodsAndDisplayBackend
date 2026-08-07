@@ -45,13 +45,12 @@ class CartonAdmin(admin.ModelAdmin):
     list_display = (
         "carton_no",
         "order",
-        "box_type",
         "size",
         "net_weight_kg",
         "gross_weight_kg",
         "cbm",
     )
-    list_filter = ("order", "box_type")
+    list_filter = ("order",)
     search_fields = ("carton_no", "order__number")
     inlines = [CartonContentInline]
 

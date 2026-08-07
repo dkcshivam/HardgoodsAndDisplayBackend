@@ -43,14 +43,6 @@ class Product(PackSpec, TimeStampedModel):
         blank=True,
         related_name="products",
     )
-    product_group = models.ForeignKey(
-        "masters.ProductGroup",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="products",
-    )
-
     # For a multi-part product these live on each part instead: a wooden base
     # and its brass handles classify under different HSN codes.
     customs_description = models.CharField(
@@ -99,19 +91,27 @@ class Product(PackSpec, TimeStampedModel):
     def __str__(self):
         return f"{self.style_no} · {self.description}"
 
+    #: PackSpec fields that must stay empty on a multi-part product.
+    OWN_BOX_FIELDS = (
+        "box_length_in",
+        "box_width_in",
+        "box_height_in",
+        "product_weight_kg",
+        "box_weight_kg",
+        "packing_material_weight_kg",
+    )
+
     def clean(self):
-        if self.is_multi_part and self.box_type_id:
+        if not self.is_multi_part:
+            return
+        filled = [f for f in self.OWN_BOX_FIELDS if getattr(self, f) is not None]
+        if filled:
             raise ValidationError(
                 {
-                    "box_type": "A multi-part product has no box of its own — "
-                    "each part carries its own box."
+                    filled[0]: "A multi-part product has no box of its own — "
+                    "each part carries its own box and weights."
                 }
             )
-
-    def save(self, *args, **kwargs):
-        if not self.is_multi_part:
-            self.apply_box_type_dimensions()
-        super().save(*args, **kwargs)
 
     # ── Totals across parts ──────────────────────────────────────────
 
@@ -168,10 +168,6 @@ class ProductPart(PackSpec):
 
     def __str__(self):
         return f"{self.product.style_no} — {self.name}"
-
-    def save(self, *args, **kwargs):
-        self.apply_box_type_dimensions()
-        super().save(*args, **kwargs)
 
 
 def product_image_path(instance, filename):

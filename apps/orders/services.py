@@ -30,7 +30,6 @@ class PlannedContent:
 @dataclass
 class PlannedCarton:
     carton_no: str
-    box_type_id: int | None
     length_in: Decimal | None
     width_in: Decimal | None
     height_in: Decimal | None
@@ -51,9 +50,7 @@ def build_packing_plan(order: Order) -> list[PlannedCarton]:
     planned: list[PlannedCarton] = []
     sequence = 1
 
-    lines = order.lines.select_related("product").prefetch_related(
-        "product__parts__box_type"
-    )
+    lines = order.lines.select_related("product").prefetch_related("product__parts")
 
     for line in lines:
         product = line.product
@@ -65,7 +62,6 @@ def build_packing_plan(order: Order) -> list[PlannedCarton]:
                     planned.append(
                         PlannedCarton(
                             carton_no=_carton_no(sequence),
-                            box_type_id=part.box_type_id,
                             length_in=part.box_length_in,
                             width_in=part.box_width_in,
                             height_in=part.box_height_in,
@@ -94,7 +90,6 @@ def build_packing_plan(order: Order) -> list[PlannedCarton]:
                 planned.append(
                     PlannedCarton(
                         carton_no=_carton_no(sequence),
-                        box_type_id=product.box_type_id,
                         length_in=product.box_length_in,
                         width_in=product.box_width_in,
                         height_in=product.box_height_in,
@@ -138,7 +133,6 @@ def apply_packing_plan(order: Order, planned: list[PlannedCarton]) -> None:
         carton = Carton.objects.create(
             order=order,
             carton_no=item.carton_no,
-            box_type_id=item.box_type_id,
             length_in=item.length_in,
             width_in=item.width_in,
             height_in=item.height_in,
@@ -234,7 +228,7 @@ def find_blockers(order: Order) -> list[Blocker]:
     """Every reason this plan cannot be saved. Empty means it is sound."""
     blockers: list[Blocker] = []
     cartons = list(
-        order.cartons.prefetch_related("contents").select_related("box_type")
+        order.cartons.prefetch_related("contents")
     )
 
     numbers = Counter(
@@ -253,11 +247,27 @@ def find_blockers(order: Order) -> list[Blocker]:
                 )
             )
 
-        if not carton.box_type_id:
+        # Dimensions drive CBM, which is what the shipping line bills against.
+        # Without them a carton silently declares zero volume.
+        missing = [
+            name
+            for name, value in (
+                ("length", carton.length_in),
+                ("width", carton.width_in),
+                ("height", carton.height_in),
+            )
+            if not value
+        ]
+        if missing:
+            named = (
+                missing[0]
+                if len(missing) == 1
+                else f"{', '.join(missing[:-1])} and {missing[-1]}"
+            )
             blockers.append(
                 Blocker(
-                    code="missing_box_type",
-                    message=f"Carton {label} has no box type",
+                    code="missing_dimensions",
+                    message=f"Carton {label} is missing its {named}",
                     carton_id=carton.id,
                 )
             )

@@ -18,15 +18,6 @@ class PackSpec(models.Model):
     apart between the two paths.
     """
 
-    box_type = models.ForeignKey(
-        "masters.BoxType",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="%(app_label)s_%(class)s_set",
-        help_text="Picking a type fills the dimensions below; they stay editable.",
-    )
-
     box_length_in = models.DecimalField(
         "box length (in)", max_digits=8, decimal_places=2, null=True, blank=True
     )
@@ -82,13 +73,3 @@ class PackSpec(models.Model):
     @property
     def cbm(self):
         return calc.cbm(self.box_length_in, self.box_width_in, self.box_height_in)
-
-    def apply_box_type_dimensions(self):
-        if not self.box_type:
-            return
-        if self.box_length_in is None:
-            self.box_length_in = self.box_type.length_in
-        if self.box_width_in is None:
-            self.box_width_in = self.box_type.width_in
-        if self.box_height_in is None:
-            self.box_height_in = self.box_type.height_in

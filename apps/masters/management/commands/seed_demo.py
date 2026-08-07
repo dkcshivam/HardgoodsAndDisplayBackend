@@ -9,7 +9,7 @@ from django.core.management.base import BaseCommand
 from django.db import connection, transaction
 
 from apps.catalog.models import Product, ProductPart
-from apps.masters.models import BoxType, Category, Merchant, ProductGroup
+from apps.masters.models import Category, Merchant
 from apps.orders.models import Carton, Order, OrderLine
 from apps.orders.services import apply_packing_plan, build_packing_plan
 
@@ -18,22 +18,7 @@ def d(value) -> Decimal:
     return Decimal(str(value))
 
 
-BOX_TYPES = [
-    # code, name, L, W, H, max kg
-    ("STD-S", "Standard Small", 24, 18, 14, 18),
-    ("STD-M", "Standard Medium", 40, 30, 24, 30),
-    ("STD-L", "Standard Large", 60, 40, 36, 45),
-    ("TOP-FLAT", "Flat Panel", 76, 44, 8, 40),
-    ("LEG-PACK", "Leg & Hardware", 34, 12, 12, 25),
-    ("MIR-TALL", "Tall Fragile", 34, 6, 74, 20),
-]
-
 CATEGORIES = ["Table", "Chair", "Storage", "Stool", "Decor", "Lighting"]
-
-GROUPS = [
-    ("Oak Dining Collection", "Ship with felt pads; keep as a set where possible."),
-    ("Walnut Living", "Wrap corners; walnut scratches easily."),
-]
 
 MERCHANTS = [
     ("UO", "Urban Outfitters Inc", "Dana Whitfield", "dana@urbn.com",
@@ -46,14 +31,13 @@ MERCHANTS = [
      "+1 215 555 0777", "Philadelphia", "US"),
 ]
 
-# style_no, description, category, group, fragile, status, pack_per_box,
+# style_no, description, category, fragile, status, pack_per_box,
 # assembled L/W/H/kg, single-box spec or parts
 PRODUCTS = [
     {
         "style_no": "DKC-TBL-OAK-01",
         "description": "Oak Dining Table",
         "category": "Table",
-        "group": "Oak Dining Collection",
         "assembled": (72, 40, 30, 34),
         "customs": ("Wooden Dining Table", "9403.30"),
         "parts": [
@@ -63,7 +47,6 @@ PRODUCTS = [
                 "customs": ("Wooden Table Top", "9403.30"),
                 "size": (72, 40, 4),
                 "weight": 20,
-                "box": "TOP-FLAT",
                 "box_size": (76, 44, 8),
             },
             {
@@ -72,7 +55,6 @@ PRODUCTS = [
                 "customs": ("Wooden Furniture Legs", "9403.90"),
                 "size": (30, 8, 8),
                 "weight": 14,
-                "box": "LEG-PACK",
                 "box_size": (34, 12, 12),
             },
         ],
@@ -81,17 +63,15 @@ PRODUCTS = [
         "style_no": "DKC-CHR-OAK-02",
         "description": "Oak Dining Chair",
         "category": "Chair",
-        "group": "Oak Dining Collection",
         "assembled": (20, 22, 34, 6),
         "customs": ("Wooden Dining Chair", "9401.61"),
         "pack_per_box": 2,
-        "single": {"weight": 6, "box": "STD-M", "box_size": (40, 30, 24)},
+        "single": {"weight": 6, "box_size": (40, 30, 24)},
     },
     {
         "style_no": "DKC-SDB-WAL-07",
         "description": "Walnut Sideboard",
         "category": "Storage",
-        "group": "Walnut Living",
         "assembled": (64, 18, 32, 46),
         "customs": ("Wooden Sideboard", "9403.50"),
         "parts": [
@@ -101,7 +81,6 @@ PRODUCTS = [
                 "customs": ("Wooden Cabinet Carcass", "9403.50"),
                 "size": (64, 18, 26),
                 "weight": 38,
-                "box": "STD-L",
                 "box_size": (66, 20, 28),
             },
             {
@@ -110,7 +89,6 @@ PRODUCTS = [
                 "customs": ("Wooden Cabinet Doors and Shelves", "9403.90"),
                 "size": (40, 18, 6),
                 "weight": 8,
-                "box": "TOP-FLAT",
                 "box_size": (44, 20, 8),
             },
         ],
@@ -119,36 +97,32 @@ PRODUCTS = [
         "style_no": "DKC-MIR-BRS-08",
         "description": "Brass Floor Mirror",
         "category": "Decor",
-        "group": None,
         "fragile": True,
         "assembled": (30, 2, 70, 12),
         "customs": ("Framed Glass Mirror", "7009.92"),
-        "single": {"weight": 12, "box": "MIR-TALL", "box_size": (34, 6, 74)},
+        "single": {"weight": 12, "box_size": (34, 6, 74)},
     },
     {
         "style_no": "DKC-STL-OAK-05",
         "description": "Oak Bar Stool",
         "category": "Stool",
-        "group": "Oak Dining Collection",
         "assembled": (16, 16, 30, 5),
         "customs": ("Wooden Bar Stool", "9401.69"),
         "pack_per_box": 2,
-        "single": {"weight": 5, "box": "STD-S", "box_size": (24, 18, 14)},
+        "single": {"weight": 5, "box_size": (24, 18, 14)},
     },
     {
         "style_no": "DKC-DRS-OAK-06",
         "description": "6-Drawer Dresser",
         "category": "Storage",
-        "group": None,
         "assembled": (60, 20, 34, 52),
         "customs": ("Wooden Chest of Drawers", "9403.50"),
-        "single": {"weight": 52, "box": "STD-L", "box_size": (60, 40, 36)},
+        "single": {"weight": 52, "box_size": (60, 40, 36)},
     },
     {
         "style_no": "DKC-BKC-WAL-03",
         "description": "Walnut Bookcase",
         "category": "Storage",
-        "group": "Walnut Living",
         "assembled": (36, 12, 72, 40),
         "customs": ("Wooden Bookcase", "9403.50"),
         "parts": [
@@ -158,7 +132,6 @@ PRODUCTS = [
                 "customs": ("Wooden Bookcase Frame", "9403.50"),
                 "size": (36, 12, 72),
                 "weight": 30,
-                "box": "STD-L",
                 "box_size": (40, 14, 74),
             },
             {
@@ -167,7 +140,6 @@ PRODUCTS = [
                 "customs": ("Wooden Shelving Boards", "9403.90"),
                 "size": (34, 11, 4),
                 "weight": 10,
-                "box": "TOP-FLAT",
                 "box_size": (38, 13, 6),
             },
         ],
@@ -176,7 +148,6 @@ PRODUCTS = [
         "style_no": "DKC-CFT-MRB-04",
         "description": "Marble Coffee Table",
         "category": "Table",
-        "group": None,
         "fragile": True,
         "status": "inactive",
         "assembled": (48, 24, 18, 28),
@@ -188,7 +159,6 @@ PRODUCTS = [
                 "customs": ("Worked Marble Slab", "6802.91"),
                 "size": (48, 24, 2),
                 "weight": 20,
-                "box": "TOP-FLAT",
                 "box_size": (52, 28, 6),
             },
             {
@@ -197,7 +167,6 @@ PRODUCTS = [
                 "customs": ("Steel Furniture Base", "9403.20"),
                 "size": (24, 24, 16),
                 "weight": 8,
-                "box": "STD-M",
                 "box_size": (28, 28, 18),
             },
         ],
@@ -280,8 +249,7 @@ def packaging_weights(item_weight_kg: float) -> tuple[Decimal, Decimal]:
 
 def reset_sequences():
     """Restart ids at 1 so a reseed always produces the same links."""
-    models = [Carton, Order, OrderLine, ProductPart, Product, ProductGroup,
-              Category, BoxType, Merchant]
+    models = [Carton, Order, OrderLine, ProductPart, Product, Category, Merchant]
     with connection.cursor() as cursor:
         for model in models:
             table = model._meta.db_table
@@ -301,35 +269,14 @@ class Command(BaseCommand):
         Order.objects.all().delete()
         ProductPart.objects.all().delete()
         Product.objects.all().delete()
-        ProductGroup.objects.all().delete()
         Category.objects.all().delete()
-        BoxType.objects.all().delete()
         Merchant.objects.all().delete()
         reset_sequences()
-
-        boxes = {
-            code: BoxType.objects.create(
-                code=code,
-                name=name,
-                length_in=d(length),
-                width_in=d(width),
-                height_in=d(height),
-                max_weight_kg=d(max_kg),
-            )
-            for code, name, length, width, height, max_kg in BOX_TYPES
-        }
-        self.stdout.write(f"  {len(boxes)} box types")
 
         categories = {
             name: Category.objects.create(name=name) for name in CATEGORIES
         }
         self.stdout.write(f"  {len(categories)} categories")
-
-        groups = {
-            name: ProductGroup.objects.create(name=name, remark=remark)
-            for name, remark in GROUPS
-        }
-        self.stdout.write(f"  {len(groups)} product groups")
 
         merchants = {
             code: Merchant.objects.create(
@@ -357,7 +304,6 @@ class Command(BaseCommand):
                 style_no=spec["style_no"],
                 description=spec["description"],
                 category=categories[spec["category"]],
-                product_group=groups.get(spec["group"]) if spec.get("group") else None,
                 customs_description="" if is_multi_part else customs_name,
                 hsn_code="" if is_multi_part else hsn,
                 is_multi_part=is_multi_part,
@@ -374,7 +320,6 @@ class Command(BaseCommand):
                 single = spec["single"]
                 box_l, box_w, box_h = single["box_size"]
                 box_kg, packing_kg = packaging_weights(single["weight"])
-                product.box_type = boxes[single["box"]]
                 product.box_length_in = d(box_l)
                 product.box_width_in = d(box_w)
                 product.box_height_in = d(box_h)
@@ -400,7 +345,6 @@ class Command(BaseCommand):
                     length_in=d(part_l),
                     width_in=d(part_w),
                     height_in=d(part_h),
-                    box_type=boxes[part_spec["box"]],
                     box_length_in=d(box_l),
                     box_width_in=d(box_w),
                     box_height_in=d(box_h),

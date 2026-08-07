@@ -20,7 +20,6 @@ class ProductPartInline(admin.StackedInline):
         ("customs_description", "hsn_code"),
         ("length_in", "width_in", "height_in"),
         "product_weight_kg",
-        "box_type",
         ("box_length_in", "box_width_in", "box_height_in"),
         "box_weight_kg",
         "packing_material_weight_kg",
@@ -46,10 +45,9 @@ class ProductAdmin(admin.ModelAdmin):
         "description",
         "category",
         "packing",
-        "product_group",
         "status",
     )
-    list_filter = ("status", "is_multi_part", "is_fragile", "category", "product_group")
+    list_filter = ("status", "is_multi_part", "is_fragile", "category")
     search_fields = ("style_no", "description", "customs_description", "hsn_code")
     inlines = [ProductImageInline, ProductPartInline]
     readonly_fields = ("derived", "created_at", "updated_at")
@@ -63,7 +61,6 @@ class ProductAdmin(admin.ModelAdmin):
                     "description",
                     "category",
                     ("is_fragile", "status"),
-                    "product_group",
                 )
             },
         ),
@@ -83,7 +80,6 @@ class ProductAdmin(admin.ModelAdmin):
             {
                 "description": "Leave empty for multi-part products — parts carry their own.",
                 "fields": (
-                    "box_type",
                     ("box_length_in", "box_width_in", "box_height_in"),
                     "product_weight_kg",
                     "box_weight_kg",
@@ -131,7 +127,6 @@ class ProductAdmin(admin.ModelAdmin):
 
 @admin.register(ProductPart)
 class ProductPartAdmin(admin.ModelAdmin):
-    list_display = ("product", "name", "box_type", "net_weight_kg", "gross_weight_kg", "cbm")
-    list_filter = ("box_type",)
+    list_display = ("product", "name", "net_weight_kg", "gross_weight_kg", "cbm")
     search_fields = ("name", "product__style_no", "hsn_code")
     inlines = [ProductImageInline]

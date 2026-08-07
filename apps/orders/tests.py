@@ -4,22 +4,18 @@ from django.urls import reverse
 from rest_framework.test import APITestCase
 
 from apps.catalog.models import Product, ProductPart
-from apps.masters.models import BoxType, Merchant
+from apps.masters.models import Merchant
 
 from .models import Order, OrderLine
 
 
 class PackingApiTests(APITestCase):
     def setUp(self):
-        self.box = BoxType.objects.create(
-            code="STD-M", name="Standard Medium",
-            length_in=40, width_in=30, height_in=24,
-        )
         self.merchant = Merchant.objects.create(code="UO", name="Urban Outfitters")
 
         self.chair = Product.objects.create(
             style_no="CHR-01", description="Chair", pack_per_box=2,
-            box_type=self.box,
+            box_length_in=40, box_width_in=30, box_height_in=24,
             product_weight_kg=Decimal("6"),
             box_weight_kg=Decimal("0.5"),
             packing_material_weight_kg=Decimal("0.2"),
@@ -29,7 +25,8 @@ class PackingApiTests(APITestCase):
         )
         for name in ("Top", "Legs"):
             ProductPart.objects.create(
-                product=self.table, name=name, box_type=self.box,
+                product=self.table, name=name,
+                box_length_in=40, box_width_in=30, box_height_in=24,
                 product_weight_kg=Decimal("10"),
                 box_weight_kg=Decimal("1"),
                 packing_material_weight_kg=Decimal("0.5"),
@@ -48,7 +45,6 @@ class PackingApiTests(APITestCase):
             "cartons": [
                 {
                     "carton_no": carton["carton_no"],
-                    "box_type": carton["box_type"],
                     "length_in": carton["length_in"],
                     "width_in": carton["width_in"],
                     "height_in": carton["height_in"],
@@ -123,6 +119,21 @@ class PackingApiTests(APITestCase):
         )
         self.assertEqual(row["packed"], 1)
         self.assertFalse(row["is_matched"])
+
+    def test_a_carton_without_dimensions_is_blocked(self):
+        """Regression: blank dimensions used to save cleanly and declare 0 CBM."""
+        self.client.post(self.url("auto-pack"))
+        read = self.client.get(self.url("packing"))
+
+        payload = self.payload(read.data["cartons"])
+        for carton in payload["cartons"]:
+            carton["length_in"] = carton["width_in"] = carton["height_in"] = None
+
+        response = self.client.put(self.url("packing"), payload, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(
+            any(b["code"] == "missing_dimensions" for b in response.data["blockers"])
+        )
 
     def test_cannot_mark_packed_while_blocked(self):
         response = self.client.post(self.url("advance-status"))

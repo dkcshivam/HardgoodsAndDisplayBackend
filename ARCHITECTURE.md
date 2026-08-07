@@ -68,14 +68,12 @@ The vocabulary is the spec. Ambiguity here becomes bugs downstream.
 | **Product** | A packing recipe for one SKU, identified by Style No. Not a sale item — it has no price or stock. Written once, reused by every future order. |
 | **Item** | Casual synonym for Product. Deliberately **not** a table. |
 | **Part** | One separately-boxed component of a multi-part product ("Table top", "Legs set"). Carries the same depth of data as a whole single-box product. |
-| **Box Type** | A reusable carton *specification* — code, name, standard L/W/H, max weight. A kind of box, not a physical one. Selecting one pre-fills dimensions, which remain editable. |
-| **Carton** | One physical shipping box, belonging to exactly one order. The instance to Box Type's specification. |
+| **Carton** | One physical shipping box, belonging to exactly one order. Its dimensions are entered directly. |
 | **Carton Content** | What is inside a carton: a product, optionally a specific part, and a quantity. Separate from Carton because one carton may hold several different things. |
 | **Order** | A merchant's purchase to fulfil. Header plus lines. |
 | **Order Line** | One row of the order: `{product, quantity}`. Commercial only — says nothing about boxes. |
 | **Merchant** | The customer shipped to (Urban Outfitters, West Elm). |
 | **Category** | A product label (Table, Chair, Storage). Set **once per product**, never per part. A list column, never a grouping. |
-| **Product Group** | A named set of products sharing a packing instruction ("Oak Dining Collection — ship with felt pads"). Cuts across categories. A product belongs to 0 or 1. |
 
 ### Measurements
 
@@ -139,51 +137,43 @@ All monetary-precision arithmetic uses `Decimal` in Python, never `float`.
 Weights quantize to 3 decimal places, CBM to 4.
 
 Canonical implementations:
-- `backend/apps/common/calc.py` — **source of truth**
-- `frontend/src/lib/calc.ts` — mirror, for live form feedback only
+- `apps/common/calc.py` (this repo) — **source of truth**
+- `src/lib/calc.ts` (Frontend repo) — mirror, for live form feedback only
 
 ---
 
 ## 5. Data model
 
-Eleven tables in three groups, mirroring `backend/apps/`.
+Nine tables in three groups, mirroring `apps/`.
 
 ```
    MASTERS                         CATALOG
    ─────────────                   ─────────────
    Category ───────────────────▶ Product ◀───┐
-   ProductGroup ───────────────▶   │         │
-   BoxType ────────────────────▶   │         │
-      │                            ├──▶ ProductPart ◀─┐
-      │                            │         │        │
-      │                            └────┬────┘        │
-      │                                 ▼             │
-      │                            ProductImage       │
-      │                                               │
-   ORDERS                                             │
-   ─────────────                                      │
-   Merchant ──▶ Order ──┬──▶ OrderLine ──────────────▶│
-                        │                             │
-                        └──▶ Carton ──▶ CartonContent─┘
-                               ▲
-                               └── BoxType
+                                  │         │
+                                  ├──▶ ProductPart ◀─┐
+                                  │         │        │
+                                  └────┬────┘        │
+                                       ▼             │
+                                  ProductImage       │
+                                                     │
+   ORDERS                                            │
+   ─────────────                                     │
+   Merchant ──▶ Order ──┬──▶ OrderLine ─────────────▶│
+                        │                            │
+                        └──▶ Carton ──▶ CartonContent┘
 ```
 
 ### masters
 
-**BoxType** — `code`(unique) · `name` · `length_in` · `width_in` · `height_in` ·
-`max_weight_kg` · `is_active`
-
 **Category** — `name`(unique) · `is_active`
-
-**ProductGroup** — `name`(unique) · `remark`
 
 **Merchant** — `code`(unique) · `name` · `contact_name` · `email` · `phone` ·
 `city` · `country` · `is_active`
 
 ### catalog
 
-**Product** — `style_no`(unique) · `description` · `category`→ · `product_group`→ ·
+**Product** — `style_no`(unique) · `description` · `category`→ ·
 `customs_description` · `hsn_code` · `is_multi_part` · `is_fragile` · `status` ·
 `assembled_{length,width,height}_in` · `assembled_weight_kg` · `pack_per_box` ·
 *plus the PackSpec block*
@@ -201,7 +191,7 @@ constraint) · `image` · `is_main` · `sort_order`
 
 **OrderLine** — `order`→ · `product`→ · `quantity` — unique on `(order, product)`
 
-**Carton** — `order`→ · `carton_no` · `box_type`→ · `{length,width,height}_in` ·
+**Carton** — `order`→ · `carton_no` · `{length,width,height}_in` ·
 `gross_weight_kg` · `sort_order` — unique on `(order, carton_no)`
 
 **CartonContent** — `carton`→ · `product`→ · `part`→(nullable) · `description` ·
@@ -214,7 +204,7 @@ Abstract model in `apps/common/models.py`, inherited by both `Product` and
 drift between the single-box and multi-part paths.
 
 ```
-box_type→ · box_length_in · box_width_in · box_height_in
+box_length_in · box_width_in · box_height_in
 product_weight_kg · box_weight_kg · packing_material_weight_kg
 ────────────────────────────────────────────────────────────
 net_weight_kg · gross_weight_kg · cbm     (properties, not columns)
@@ -300,7 +290,7 @@ the invariant regardless of how the row was created. Neither alone is sufficient
 
 ### D7 — snake_case field names in TypeScript
 
-`frontend/src/types/index.ts` uses `style_no`, not `styleNo`, matching DRF output.
+`src/types/index.ts` in the Frontend repo uses `style_no`, not `styleNo`, matching DRF output.
 
 *Rationale:* eliminates a translation layer, which is a class of bug removed
 rather than managed.
@@ -311,7 +301,7 @@ rather than managed.
 displays — not left at defaults.
 
 *Rationale:* it provides a complete working CRUD application from day one. Master
-data can be maintained there indefinitely, deferring three custom screens and
+data can be maintained there indefinitely, deferring custom screens and
 letting effort go to the product form and packing workspace, which Admin cannot
 express well.
 
@@ -381,7 +371,7 @@ The packing plan cannot be saved while any of these hold:
 |---|---|
 | `missing_carton_no` | carton number blank |
 | `duplicate_carton_no` | number used more than once in the order |
-| `missing_box_type` | no box type selected |
+| `missing_dimensions` | carton length, width or height blank — CBM would be zero |
 | `gross_below_net` | carton gross weight < sum of its contents' net weight |
 | `quantity_mismatch` | any reconciliation row unmatched |
 
@@ -446,8 +436,6 @@ Photo upload is the one gap in the product form — the API has no upload endpoi
 | # | Screen | Status |
 |---|---|---|
 | 20 | Merchants | ✅ Built |
-| 21 | Box Types | ✅ Built |
-| 22 | Product Groups | ✅ Built |
 | 23 | Settings | Not built |
 
 ### Shared shell patterns
@@ -479,9 +467,7 @@ Base: `/api/`. DRF `PageNumberPagination`, page size 50.
 
 | Endpoint | Methods | Notes |
 |---|---|---|
-| `/box-types/` | CRUD | filter `is_active`; search code, name |
 | `/categories/` | CRUD | |
-| `/product-groups/` | CRUD | includes `product_count` |
 | `/merchants/` | CRUD | |
 | `/products/` | CRUD | light serializer on list, full on detail; parts written in the same request |
 | `/orders/` | CRUD | nested `lines`; `shipping_address` nested on read and write |
@@ -562,9 +548,8 @@ Vertical slices — database, API and screen for one feature at a time.
 - [x] **0** Frontend scaffold — Next.js 16, Tailwind v4, design tokens, `api.ts`, `calc.ts`, types
 - [x] **0b** Backend — models, admin, API, packing engine, seed data
 - [x] **0c** Docker — compose for db + api + web, multi-stage images
-- [x] **1** App shell + Box Types screen — establishes the pattern
-- [x] **2** Categories and Product Groups screens
-- [x] **3** Merchants screen
+- [x] **1** App shell + Categories screen — establishes the pattern
+- [x] **2** Merchants screen
 - [x] **4** Product form — single-box path
 - [x] **5** Product form — multi-part path
 - [ ] **6** Photo upload

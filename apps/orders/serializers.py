@@ -63,7 +63,6 @@ class CartonSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "carton_no",
-            "box_type",
             "length_in",
             "width_in",
             "height_in",

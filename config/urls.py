@@ -5,19 +5,12 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from apps.catalog.views import ProductViewSet
-from apps.masters.views import (
-    BoxTypeViewSet,
-    CategoryViewSet,
-    MerchantViewSet,
-    ProductGroupViewSet,
-)
+from apps.masters.views import CategoryViewSet, MerchantViewSet
 from apps.orders.views import OrderViewSet
 
 router = DefaultRouter()
 
-router.register("box-types", BoxTypeViewSet)
 router.register("categories", CategoryViewSet)
-router.register("product-groups", ProductGroupViewSet)
 router.register("merchants", MerchantViewSet)
 router.register("products", ProductViewSet)
 router.register("orders", OrderViewSet)

@@ -23,7 +23,6 @@ class DerivedFieldsMixin(metaclass=serializers.SerializerMetaclass):
 
 
 PACK_SPEC_FIELDS = [
-    "box_type",
     "box_length_in",
     "box_width_in",
     "box_height_in",
@@ -60,9 +59,6 @@ class ProductListSerializer(serializers.ModelSerializer):
     """The lighter shape used by the products table — no parts, no images."""
 
     category_name = serializers.CharField(source="category.name", default="", read_only=True)
-    product_group_name = serializers.CharField(
-        source="product_group.name", default=None, read_only=True
-    )
     part_count = serializers.IntegerField(source="parts.count", read_only=True)
 
     class Meta:
@@ -73,8 +69,6 @@ class ProductListSerializer(serializers.ModelSerializer):
             "description",
             "category",
             "category_name",
-            "product_group",
-            "product_group_name",
             "is_multi_part",
             "part_count",
             "pack_per_box",
@@ -90,9 +84,6 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, read_only=True)
 
     category_name = serializers.CharField(source="category.name", default="", read_only=True)
-    product_group_name = serializers.CharField(
-        source="product_group.name", default=None, read_only=True
-    )
 
     total_shipping_weight_kg = serializers.DecimalField(
         max_digits=12, decimal_places=3, read_only=True
@@ -109,8 +100,6 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
             "description",
             "category",
             "category_name",
-            "product_group",
-            "product_group_name",
             "customs_description",
             "hsn_code",
             "is_multi_part",
@@ -138,11 +127,12 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
         parts = attrs.get("parts")
 
         if is_multi_part:
-            if attrs.get("box_type"):
+            own_box = [f for f in Product.OWN_BOX_FIELDS if attrs.get(f) is not None]
+            if own_box:
                 raise serializers.ValidationError(
                     {
-                        "box_type": "A multi-part product has no box of its own — "
-                        "each part carries its own."
+                        own_box[0]: "A multi-part product has no box of its own — "
+                        "each part carries its own box and weights."
                     }
                 )
             if parts is not None and len(parts) < 2:

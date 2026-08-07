@@ -116,17 +116,14 @@ class OrderLine(models.Model):
 
 class Carton(models.Model):
     """
-    One physical shipping box. Where a BoxType is a specification, this is
-    the real taped-up box. Dimensions start from the chosen type and stay
-    editable — the box used is not always the box planned.
+    One physical shipping box. Auto-pack seeds its dimensions from the
+    product's recipe; they stay editable, because the box actually used is
+    not always the box planned.
     """
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="cartons")
     carton_no = models.CharField(max_length=32, help_text="e.g. CTN-001")
 
-    box_type = models.ForeignKey(
-        "masters.BoxType", on_delete=models.SET_NULL, null=True, blank=True
-    )
     length_in = models.DecimalField(
         "length (in)", max_digits=8, decimal_places=2, null=True, blank=True
     )
