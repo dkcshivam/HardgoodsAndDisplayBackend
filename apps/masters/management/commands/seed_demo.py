@@ -1,13 +1,6 @@
 """
-Fill an empty database with the sample data from the approved prototype.
-
-    python manage.py seed_demo
-
-Safe to re-run: it wipes the demo tables first. Never run it against real
-data — it is for development and for seeing the screens with something in
-them.
-
-Dimensions are inches, weights kilograms.
+Sample data from the approved prototype. Safe to re-run — it wipes the
+tables first, so never point it at real data.
 """
 
 from decimal import Decimal
@@ -277,11 +270,8 @@ ORDERS = [
 
 def packaging_weights(item_weight_kg: float) -> tuple[Decimal, Decimal]:
     """
-    Plausible carton and padding weights for demo data.
-
-    The prototype only recorded item weight, so these are invented — real
-    values get entered per product on the form. Kept proportional so gross
-    always exceeds net and nothing trips a blocker.
+    Invented — the prototype only recorded item weight. Kept proportional so
+    gross always exceeds net and nothing trips a blocker.
     """
     box = max(Decimal("0.400"), (d(item_weight_kg) * d("0.09")).quantize(d("0.001")))
     packing = max(Decimal("0.100"), (d(item_weight_kg) * d("0.04")).quantize(d("0.001")))
@@ -425,9 +415,7 @@ class Command(BaseCommand):
                     order=order, product=products[style_no], quantity=quantity
                 )
 
-            # An order past draft has, by definition, been packed — so give it
-            # a carton plan. Draft orders are left empty on purpose, so the
-            # packing screen can be seen in its "No cartons yet" state.
+            # Drafts are left empty so the packing screen's blank state shows.
             if spec["status"] != "draft":
                 apply_packing_plan(order, build_packing_plan(order))
                 packed_orders += 1

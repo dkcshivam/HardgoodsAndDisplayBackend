@@ -1,9 +1,4 @@
-"""
-Master data — set up once, referenced everywhere.
-
-Nothing here belongs to an order. These records exist independently and
-outlive any single shipment.
-"""
+"""Master data — set up once, referenced everywhere, outlives any shipment."""
 
 from django.db import models
 
@@ -13,14 +8,8 @@ from apps.common.models import TimeStampedModel
 
 class BoxType(TimeStampedModel):
     """
-    A reusable carton specification — a *kind* of box, not a physical one.
-
-    Think shoe size, not shoe. "STD-M, 40 x 30 x 24 inches, holds 30kg" is
-    a spec you keep 500 of flat in the warehouse. The actual taped-up box
-    that ships is a Carton (see apps.orders).
-
-    Choosing a box type on a product fills in its dimensions, which then
-    stay editable — the type is a starting point, never a constraint.
+    A reusable carton specification — a kind of box, not a physical one.
+    The taped-up box that ships is a Carton (apps.orders).
     """
 
     code = models.CharField(max_length=32, unique=True, help_text="e.g. STD-M")
@@ -54,12 +43,7 @@ class BoxType(TimeStampedModel):
 
 
 class Category(TimeStampedModel):
-    """
-    A product label: Table, Chair, Storage, Woodware.
-
-    Set once per product and never per part. Product lists show it as a
-    column, not as a grouping.
-    """
+    """Set once per product, never per part. A list column, not a grouping."""
 
     name = models.CharField(max_length=80, unique=True)
     is_active = models.BooleanField(default=True)
@@ -74,11 +58,8 @@ class Category(TimeStampedModel):
 
 class ProductGroup(TimeStampedModel):
     """
-    A named set of products that share a packing instruction.
-
-    "Oak Dining Collection — ship with felt pads; keep as a set where
-    possible." Cuts across categories: a group can hold a table, a chair
-    and a stool at once.
+    Products sharing a packing instruction. Cuts across categories — one
+    group can hold a table, a chair and a stool.
     """
 
     name = models.CharField(max_length=120, unique=True)

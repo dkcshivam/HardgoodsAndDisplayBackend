@@ -34,13 +34,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="auto-pack")
     def auto_pack(self, request, pk=None):
-        """
-        Build a proposed set of cartons from the ordered products' packing
-        recipes, replacing whatever is currently there.
-
-        This is a starting point, not a decision — every value stays
-        editable afterwards.
-        """
+        """Replace the plan with a proposal built from the products' recipes."""
         order = self.get_object()
 
         if order.status == OrderStatus.SHIPPED:
@@ -58,9 +52,8 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["put"], url_path="packing")
     def save_packing(self, request, pk=None):
         """
-        Replace the order's cartons with what the packing table currently
-        holds. Refuses if anything would block the save, so a plan with
-        known problems can never be stored.
+        Replace the order's cartons with what the table holds. Rolls back on
+        any blocker, so a plan with known problems can never be stored.
         """
         order = self.get_object()
 
@@ -92,11 +85,9 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="advance-status")
     def advance_status(self, request, pk=None):
         """
-        Move one rung up the ladder: draft -> packing -> packed -> shipped.
-
-        Reaching "packed" requires a clean packing plan. That gate is the
-        point of the whole app: nothing gets marked ready while the boxes
-        and the order disagree.
+        One rung up: draft -> packing -> packed -> shipped. Reaching "packed"
+        requires a clean plan — nothing is marked ready while the boxes and
+        the order disagree.
         """
         order = self.get_object()
         next_status = NEXT_STATUS.get(OrderStatus(order.status))

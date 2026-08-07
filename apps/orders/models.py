@@ -1,9 +1,6 @@
 """
-Orders and packing.
-
-An Order is what the merchant asked for. Cartons are what actually ships.
-The app's whole job is converting the first into the second and proving
-they match.
+An Order is what the merchant asked for; Cartons are what actually ships.
+The app's job is converting the first into the second and proving they match.
 """
 
 from datetime import date
@@ -22,7 +19,7 @@ class OrderStatus(models.TextChoices):
     SHIPPED = "shipped", "Shipped"
 
 
-#: The status ladder. Each status can only advance to the one that follows.
+# The ladder. Each status can only advance to the one that follows.
 NEXT_STATUS = {
     OrderStatus.DRAFT: OrderStatus.PACKING,
     OrderStatus.PACKING: OrderStatus.PACKED,
@@ -43,8 +40,7 @@ class Order(TimeStampedModel):
     )
     buyer_name = models.CharField(max_length=120, blank=True)
 
-    # Shipping address, stored flat so it can be queried and validated.
-    # The API nests it as a `shipping_address` object.
+    # Stored flat so it can be queried; the API nests it as `shipping_address`.
     ship_country = models.CharField(max_length=2, default="US")
     ship_line1 = models.CharField(max_length=180, blank=True)
     ship_line2 = models.CharField(max_length=180, blank=True)
@@ -69,10 +65,7 @@ class Order(TimeStampedModel):
 
     @staticmethod
     def generate_number(prefix: str = "HG") -> str:
-        """
-        Next number in this year's sequence: HG-2026-0001, HG-2026-0002...
-        The counter restarts each January.
-        """
+        """Next in this year's sequence: HG-2026-0001, HG-2026-0002..."""
         year = date.today().year
         stem = f"{prefix}-{year}-"
         highest = (
@@ -101,10 +94,7 @@ class Order(TimeStampedModel):
 
 
 class OrderLine(models.Model):
-    """
-    What the merchant asked for: this product, this many.
-    Purely commercial — it says nothing about boxes.
-    """
+    """What the merchant asked for. Says nothing about boxes."""
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="lines")
     product = models.ForeignKey(
@@ -126,12 +116,9 @@ class OrderLine(models.Model):
 
 class Carton(models.Model):
     """
-    One physical shipping box, belonging to one order.
-
-    Where a Box Type is a specification, this is the real taped-up box with
-    a number on the side. Its dimensions start from the chosen box type and
-    are then editable, because the box actually used is not always the box
-    that was planned.
+    One physical shipping box. Where a BoxType is a specification, this is
+    the real taped-up box. Dimensions start from the chosen type and stay
+    editable — the box used is not always the box planned.
     """
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="cartons")
@@ -164,8 +151,7 @@ class Carton(models.Model):
     class Meta:
         ordering = ["sort_order", "id"]
         constraints = [
-            # The "duplicate carton number" blocker, enforced by the database
-            # so it can never slip through however the row was created.
+            # Also enforced in the serializer, which gives the better message.
             models.UniqueConstraint(
                 fields=["order", "carton_no"], name="unique_carton_no_per_order"
             )
@@ -180,7 +166,6 @@ class Carton(models.Model):
 
     @property
     def net_weight_kg(self):
-        """Sum of everything inside this carton."""
         return sum(
             (item.net_weight_kg or 0 for item in self.contents.all()),
             start=0,
@@ -198,17 +183,11 @@ class CartonUnit(models.TextChoices):
 
 class CartonContent(models.Model):
     """
-    What is inside a carton.
+    A separate table rather than columns on Carton because the deferred
+    Display module packs several products into one carton (ARCHITECTURE.md D2).
 
-    This is a separate table rather than columns on Carton because a carton
-    can hold more than one thing. Hardgoods rarely needs that — one product
-    or one part per box — but Display packs several products into a single
-    carton from a template, and retrofitting this split later would mean
-    rebuilding the packing screen.
-
-    `part` is set when this row is one part of a multi-part product. That is
-    what makes reconciliation exact: a table is fully packed when every one
-    of its parts has a carton, not when some quantity happens to add up.
+    `part` is what makes reconciliation exact: a table is packed when every
+    one of its parts has a carton, not when a quantity happens to add up.
     """
 
     carton = models.ForeignKey(Carton, on_delete=models.CASCADE, related_name="contents")

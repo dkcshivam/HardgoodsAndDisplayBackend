@@ -1,8 +1,6 @@
 """
-Django settings for DKC Packing.
-
-Anything that differs between your laptop and the server lives in .env,
-never in this file. See .env.example for the full list.
+Anything that differs between a laptop and the server lives in .env.
+See .env.example for the full list.
 """
 
 from pathlib import Path
@@ -40,11 +38,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # Third party
     "rest_framework",
     "corsheaders",
     "django_filters",
-    # Ours
     "apps.masters",
     "apps.catalog",
     "apps.orders",
@@ -118,8 +114,7 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Product and part photos are written here in development.
-# Swap for S3 or similar before going live.
+# Local disk in development; needs an object store before deployment.
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
@@ -136,20 +131,16 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
-    # Send decimals as JSON numbers, not strings. Without this every weight
-    # arrives in the frontend as "0.600" and needs parsing before any maths.
+    # Without this every weight arrives in the frontend as "0.600" and needs parsing.
     "COERCE_DECIMAL_TO_STRING": False,
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
-        # The browsable API is genuinely useful while learning. Remove in production.
         "rest_framework.renderers.BrowsableAPIRenderer",
     ],
 }
 
 
 # ── CORS ─────────────────────────────────────────────────────────────
-# The browser blocks requests from localhost:3000 to localhost:8000 unless
-# Django explicitly allows it. This is that permission.
 
 CORS_ALLOWED_ORIGINS = env_list(
     "CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"

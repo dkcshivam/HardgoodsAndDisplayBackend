@@ -1,9 +1,6 @@
 """
-The catalogue — packing recipes.
-
-A Product record here is not a thing for sale. It has no price and no
-stock count. Every field answers one question: how does this go in a box?
-Describe a table once, and the app can pack it correctly forever after.
+Packing recipes. Not sale items — no price, no stock. Every field answers
+one question: how does this go in a box?
 """
 
 from django.core.exceptions import ValidationError
@@ -20,24 +17,13 @@ class ProductStatus(models.TextChoices):
 
 class Product(PackSpec, TimeStampedModel):
     """
-    One SKU, identified by its Style No.
+    One SKU, in one of two shapes.
 
-    A product takes one of two shapes, chosen by `is_multi_part`:
+    Single-box (is_multi_part=False): the inherited PackSpec describes the
+    one carton, and pack_per_box says how many units fit in it.
 
-    SINGLE-BOX (is_multi_part=False)
-        The whole item ships in one carton. The inherited PackSpec fields
-        (box type, box dimensions, the three weights) describe that carton.
-        `pack_per_box` says how many units fit in it.
-
-    MULTI-PART (is_multi_part=True)
-        The item ships disassembled across several cartons — a table top in
-        one, its legs in another. There is no product-level box, because the
-        assembled item never goes in one. The inherited PackSpec fields stay
-        empty and every Part carries its own instead.
-
-        The assembled_* fields below record the finished item's size and
-        weight. They are reference information for humans only and take no
-        part in any packing calculation.
+    Multi-part (True): ships disassembled, so there is no product-level box.
+    The PackSpec fields stay empty and every Part carries its own.
     """
 
     style_no = models.CharField(
@@ -65,9 +51,8 @@ class Product(PackSpec, TimeStampedModel):
         related_name="products",
     )
 
-    # Customs paperwork. For a multi-part product these live on each part
-    # instead, because different parts can classify differently — a wooden
-    # tray base and its brass handles have different HSN codes.
+    # For a multi-part product these live on each part instead: a wooden base
+    # and its brass handles classify under different HSN codes.
     customs_description = models.CharField(
         max_length=255,
         blank=True,
@@ -152,12 +137,8 @@ class Product(PackSpec, TimeStampedModel):
 
 class ProductPart(PackSpec):
     """
-    One separately-boxed component of a multi-part product.
-
-    A part carries exactly the same depth of data as a whole single-box
-    product, because as far as the shipment is concerned that is what it
-    is: an item in its own carton with its own weight and its own customs
-    classification.
+    One separately-boxed component. Carries the same depth of data as a
+    single-box product, because to the shipment that is what it is.
     """
 
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="parts")
@@ -199,11 +180,8 @@ def product_image_path(instance, filename):
 
 class ProductImage(models.Model):
     """
-    A photo of a product or of one of its parts.
-
     Exactly one of `product` or `part` is set. Parts get their own photos
-    because a warehouse packer needs to see the specific component, from
-    several angles, not the assembled item.
+    because a packer needs to see the component, not the assembled item.
     """
 
     product = models.ForeignKey(

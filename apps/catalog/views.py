@@ -5,12 +5,7 @@ from .serializers import ProductListSerializer, ProductSerializer
 
 
 class ProductViewSet(viewsets.ModelViewSet):
-    """
-    The catalogue of packing recipes.
-
-    The list endpoint returns a light shape (no parts, no images) so the
-    products table loads fast; detail returns everything.
-    """
+    """List returns a light shape so the table loads fast; detail returns all."""
 
     queryset = (
         Product.objects.select_related("category", "product_group", "box_type")

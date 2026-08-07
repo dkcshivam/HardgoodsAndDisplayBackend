@@ -5,10 +5,7 @@ from .models import Carton, CartonContent, Order, OrderLine
 
 
 class ShippingAddressSerializer(serializers.Serializer):
-    """
-    Stored as flat columns on Order, exposed as a nested object because
-    that is how the shipping form is shaped.
-    """
+    """Flat columns on Order, nested here because that is the form's shape."""
 
     country = serializers.CharField(max_length=2, default="US")
     line1 = serializers.CharField(max_length=180, allow_blank=True, required=False)
@@ -112,7 +109,6 @@ class OrderSerializer(serializers.ModelSerializer):
         }
 
     def to_internal_value(self, data):
-        # Unpack the nested address into the flat columns the model uses.
         address = data.get("shipping_address")
         validated = super().to_internal_value(data)
         if isinstance(address, dict):
@@ -168,8 +164,6 @@ class BlockerSerializer(serializers.Serializer):
 
 
 class PackingPlanSerializer(serializers.Serializer):
-    """Everything the packing screen renders, in one response."""
-
     order = serializers.IntegerField()
     cartons = CartonSerializer(many=True)
     reconciliation = ReconciliationSerializer(many=True)
@@ -183,22 +177,16 @@ class PackingPlanSerializer(serializers.Serializer):
 
 class SaveCartonsSerializer(serializers.Serializer):
     """
-    The packing table sends its whole contents on save. Replacing every
-    carton in one transaction keeps the stored plan identical to the screen
-    — no partial updates, no drift.
+    The table sends its whole contents on save. Replacing every carton in one
+    transaction keeps the stored plan identical to the screen.
     """
 
     cartons = CartonSerializer(many=True)
 
     def validate_cartons(self, cartons):
         """
-        Catch blank and duplicate carton numbers here, in the payload,
-        before any row is written.
-
-        The database also refuses duplicates (unique_carton_no_per_order),
-        but that surfaces as an IntegrityError — a 500 with no useful
-        message. Checking first turns it into the same readable blocker the
-        user already sees while editing.
+        The database also refuses duplicates, but as an IntegrityError — a 500
+        with no useful message. Checking first gives a readable blocker.
         """
         seen: dict[str, int] = {}
         errors = []

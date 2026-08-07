@@ -10,10 +10,7 @@ class ProductImageInline(admin.TabularInline):
 
 
 class ProductPartInline(admin.StackedInline):
-    """
-    Parts edit inside the product, not on a separate page — one screen for
-    the whole packing recipe.
-    """
+    """Parts edit inside the product — one screen for the whole recipe."""
 
     model = ProductPart
     extra = 0

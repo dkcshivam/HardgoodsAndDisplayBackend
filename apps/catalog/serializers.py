@@ -11,10 +11,7 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
 
 class DerivedFieldsMixin(metaclass=serializers.SerializerMetaclass):
-    """
-    The three calculated values. Read-only everywhere: they come from the
-    entered weights and dimensions, never from the request body.
-    """
+    """Derived from the entered weights, never taken from the request body."""
 
     net_weight_kg = serializers.DecimalField(
         max_digits=12, decimal_places=3, read_only=True
@@ -87,12 +84,7 @@ class ProductListSerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
-    """
-    The full record, with parts written in the same request as the product.
-
-    The product form is one screen, so it saves in one call — the frontend
-    posts the product and its parts together and gets the whole thing back.
-    """
+    """The product form is one screen, so it saves in one call — parts included."""
 
     parts = ProductPartSerializer(many=True, required=False)
     images = ProductImageSerializer(many=True, read_only=True)
@@ -183,8 +175,7 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
         instance.save()
 
         if parts_data is not None:
-            # The form always sends the complete list of parts, so replacing
-            # them wholesale matches what the user sees on screen.
+            # The form always sends the complete list.
             instance.parts.all().delete()
             self._write_parts(instance, parts_data)
 

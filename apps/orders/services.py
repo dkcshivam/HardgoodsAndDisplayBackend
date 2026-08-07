@@ -1,13 +1,6 @@
 """
-The packing engine.
-
-Three jobs, kept out of the views so they can be read, tested and reused:
-
-    build_packing_plan   order lines  -> a proposed set of cartons
-    reconcile            cartons      -> ordered vs packed, per product
-    find_blockers        cartons      -> reasons the plan cannot be saved
-
-Nothing here writes to the database except `apply_packing_plan`.
+The packing engine. Nothing here writes to the database except
+`apply_packing_plan`.
 """
 
 from collections import Counter
@@ -48,18 +41,12 @@ class PlannedCarton:
 
 def build_packing_plan(order: Order) -> list[PlannedCarton]:
     """
-    Read each ordered product's packing recipe and propose the cartons.
+    Propose cartons from each ordered product's recipe.
 
-    MULTI-PART product
-        Every ordered unit produces one carton per part. Three tables with
-        two parts each = six cartons.
+    Multi-part: one carton per part, per ordered unit — 3 tables × 2 parts
+    = 6 cartons. Single-box: quantity split by pack_per_box.
 
-    SINGLE-BOX product
-        The ordered quantity is split by pack_per_box. Six chairs that pack
-        two per box = three cartons, the last one possibly part-full.
-
-    The result is a proposal, not a decision — the user edits every value
-    afterwards to match what actually happened on the packing floor.
+    A proposal, not a decision. Every value stays editable afterwards.
     """
     planned: list[PlannedCarton] = []
     sequence = 1
@@ -188,13 +175,12 @@ class ReconciliationRow:
 
 def reconcile(order: Order) -> list[ReconciliationRow]:
     """
-    Ordered versus actually packed, per product. This is the check that
-    stops five chairs shipping against an order for six.
+    Ordered versus actually packed. The check that stops five chairs
+    shipping against an order for six.
 
-    For a multi-part product a unit only counts as packed once *every* one
-    of its parts has a carton. So we count each part separately and take
-    the lowest — a table with three tops boxed but only two leg sets is two
-    complete tables, not two and a half.
+    A multi-part unit counts as packed only once every part has a carton,
+    so each part is counted separately and the lowest wins: three tops and
+    two leg sets is two complete tables, not two and a half.
     """
     rows: list[ReconciliationRow] = []
 
@@ -245,12 +231,7 @@ class Blocker:
 
 
 def find_blockers(order: Order) -> list[Blocker]:
-    """
-    Every reason this packing plan cannot be saved.
-
-    An empty list means the plan is sound. Anything in it is shown in the
-    footer of the packing screen and disables the save button.
-    """
+    """Every reason this plan cannot be saved. Empty means it is sound."""
     blockers: list[Blocker] = []
     cartons = list(
         order.cartons.prefetch_related("contents").select_related("box_type")
@@ -322,7 +303,7 @@ def find_blockers(order: Order) -> list[Blocker]:
 
 
 def packing_summary(order: Order) -> dict:
-    """Everything the packing screen's footer and chips need, in one call."""
+    """Everything the packing screen's footer and chips need."""
     cartons = list(order.cartons.prefetch_related("contents"))
     blockers = find_blockers(order)
 
