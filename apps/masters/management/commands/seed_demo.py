@@ -6,7 +6,7 @@ tables first, so never point it at real data.
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
-from django.db import transaction
+from django.db import connection, transaction
 
 from apps.catalog.models import Product, ProductPart
 from apps.masters.models import BoxType, Category, Merchant, ProductGroup
@@ -278,6 +278,18 @@ def packaging_weights(item_weight_kg: float) -> tuple[Decimal, Decimal]:
     return box, packing
 
 
+def reset_sequences():
+    """Restart ids at 1 so a reseed always produces the same links."""
+    models = [Carton, Order, OrderLine, ProductPart, Product, ProductGroup,
+              Category, BoxType, Merchant]
+    with connection.cursor() as cursor:
+        for model in models:
+            table = model._meta.db_table
+            cursor.execute(
+                f"ALTER SEQUENCE {table}_id_seq RESTART WITH 1"  # noqa: S608 - table names are ours
+            )
+
+
 class Command(BaseCommand):
     help = "Load sample hardgoods data from the approved prototype."
 
@@ -293,6 +305,7 @@ class Command(BaseCommand):
         Category.objects.all().delete()
         BoxType.objects.all().delete()
         Merchant.objects.all().delete()
+        reset_sequences()
 
         boxes = {
             code: BoxType.objects.create(
