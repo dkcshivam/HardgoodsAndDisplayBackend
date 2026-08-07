@@ -26,11 +26,14 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     # ── Packing workspace ────────────────────────────────────────────
 
-    @action(detail=True, methods=["get"])
+    # GET and PUT share one action: two actions on the same url_path would
+    # register two identical URL patterns, and the first would shadow the second.
+    @action(detail=True, methods=["get", "put"])
     def packing(self, request, pk=None):
-        """The current packing plan: cartons, reconciliation and blockers."""
-        order = self.get_object()
-        return Response(self._plan_payload(order))
+        """Read the current plan, or replace it wholesale."""
+        if request.method == "PUT":
+            return self._save_packing(request)
+        return Response(self._plan_payload(self.get_object()))
 
     @action(detail=True, methods=["post"], url_path="auto-pack")
     def auto_pack(self, request, pk=None):
@@ -49,8 +52,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         order.refresh_from_db()
         return Response(self._plan_payload(order))
 
-    @action(detail=True, methods=["put"], url_path="packing")
-    def save_packing(self, request, pk=None):
+    def _save_packing(self, request):
         """
         Replace the order's cartons with what the table holds. Rolls back on
         any blocker, so a plan with known problems can never be stored.
