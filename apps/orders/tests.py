@@ -156,6 +156,12 @@ class PackingApiTests(OrderFixture):
 class PackingListTests(OrderFixture):
     """The Excel document the shipping desk sends out."""
 
+    # Column positions, as the sheet lays them out.
+    RANGE, COUNT, STYLE, COLOR, DESCRIPTION = 0, 1, 2, 3, 4
+    QTY, TOTAL_QTY = 5, 6
+    NET, TOTAL_NET, GROSS, TOTAL_GROSS = 7, 8, 9, 10
+    LENGTH, WIDTH, HEIGHT, CBM, TOTAL_CBM = 11, 12, 13, 14, 15
+
     def rows(self):
         """Data rows only — between the column headers and the totals."""
         response = self.client.get(self.url("packing-list"))
@@ -163,7 +169,7 @@ class PackingListTests(OrderFixture):
 
         sheet = load_workbook(BytesIO(b"".join(response.streaming_content))).active
         values = list(sheet.iter_rows(values_only=True))
-        start = next(i for i, row in enumerate(values) if row[0] == "Carton No") + 1
+        start = next(i for i, row in enumerate(values) if row[0] == "Carton Nos") + 1
 
         found = []
         for row in values[start:]:
@@ -172,32 +178,89 @@ class PackingListTests(OrderFixture):
             found.append(row)
         return found
 
+    def repack(self, edit):
+        """Auto-pack, let `edit` change the plan, then save it back."""
+        self.client.post(self.url("auto-pack"))
+        cartons = self.client.get(self.url("packing")).data["cartons"]
+        edit(cartons)
+        response = self.client.put(self.url("packing"), self.payload(cartons), format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+
     def test_it_needs_cartons_before_there_is_anything_to_list(self):
         response = self.client.get(self.url("packing-list"))
         self.assertEqual(response.status_code, 400)
 
-    def test_every_packed_item_gets_a_row_carrying_its_order_colour(self):
+    def test_identical_cartons_collapse_to_one_row(self):
         self.client.post(self.url("auto-pack"))
         rows = self.rows()
 
-        # One row per content line: 3 chair cartons + 4 table part cartons.
-        self.assertEqual(len(rows), 7)
+        # Seven cartons, but only three different things in them: the chairs,
+        # the table tops and the leg sets.
+        self.assertEqual(self.order.cartons.count(), 7)
+        self.assertEqual(len(rows), 3)
 
-        colors = {row[1]: row[2] for row in rows}
+        self.assertEqual(
+            [row[self.DESCRIPTION] for row in rows],
+            ["Chair", "Table — Top", "Table — Legs"],
+        )
+
+    def test_a_row_names_its_carton_range_and_counts_them(self):
+        self.client.post(self.url("auto-pack"))
+        chairs = self.rows()[0]
+
+        self.assertEqual(chairs[self.RANGE], "CTN-001 – CTN-003")
+        self.assertEqual(chairs[self.COUNT], 3)
+
+    def test_cartons_that_do_not_run_consecutively_are_listed(self):
+        """Auto-pack numbers a multi-part product one whole unit at a time,
+        so a single part's cartons are every second number."""
+        self.client.post(self.url("auto-pack"))
+        tops = self.rows()[1]
+
+        self.assertEqual(tops[self.RANGE], "CTN-004, CTN-006")
+        self.assertEqual(tops[self.COUNT], 2)
+
+    def test_totals_multiply_the_per_carton_figures(self):
+        self.client.post(self.url("auto-pack"))
+        chairs = self.rows()[0]
+        carton = self.order.cartons.first()
+
+        self.assertEqual(chairs[self.QTY], 2)
+        self.assertEqual(chairs[self.TOTAL_QTY], 6)
+        self.assertEqual(Decimal(str(chairs[self.GROSS])), carton.gross_weight_kg)
+        self.assertEqual(
+            Decimal(str(chairs[self.TOTAL_GROSS])), carton.gross_weight_kg * 3
+        )
+        self.assertEqual(Decimal(str(chairs[self.TOTAL_CBM])), carton.cbm * 3)
+
+    def test_a_row_carries_the_box_size_and_the_order_colour(self):
+        self.client.post(self.url("auto-pack"))
+        rows = self.rows()
+        carton = self.order.cartons.first()
+
+        self.assertEqual(
+            [rows[0][self.LENGTH], rows[0][self.WIDTH], rows[0][self.HEIGHT]],
+            [carton.length_in, carton.width_in, carton.height_in],
+        )
+
+        colors = {row[self.STYLE]: row[self.COLOR] for row in rows}
         self.assertEqual(colors["CHR-01"], "Charcoal Wash")
         self.assertEqual(colors["TBL-01"], "Natural Oak")
 
-    def test_a_row_carries_the_carton_number_weights_and_box_size(self):
-        self.client.post(self.url("auto-pack"))
-        first = self.rows()[0]
+    def test_a_carton_weighed_differently_gets_its_own_row(self):
+        """The whole point of collapsing is that the merged cartons really
+        are identical — one reweighed box has to break out."""
+        def heavier(cartons):
+            cartons[0]["gross_weight_kg"] = "13.400"
 
-        carton = self.order.cartons.first()
-        self.assertEqual(first[0], carton.carton_no)
-        self.assertEqual(Decimal(str(first[6])), carton.gross_weight_kg)
-        self.assertEqual(
-            [first[7], first[8], first[9]],
-            [carton.length_in, carton.width_in, carton.height_in],
-        )
+        self.repack(heavier)
+        rows = self.rows()
+
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[0][self.RANGE], "CTN-001")
+        self.assertEqual(rows[0][self.COUNT], 1)
+        self.assertEqual(rows[1][self.RANGE], "CTN-002 – CTN-003")
+        self.assertEqual(rows[1][self.COUNT], 2)
 
     def test_the_filename_names_the_order(self):
         self.client.post(self.url("auto-pack"))

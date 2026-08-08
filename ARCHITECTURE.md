@@ -414,17 +414,31 @@ known problems cannot reach the database whatever the client does.
 
 `GET /orders/{id}/packing-list/` renders the stored plan as an Excel sheet: a
 heading block naming the order, merchant, buyer and ship-to address, then one row
-per carton content —
+per **distinct thing packed** —
 
 ```
-Carton No · Style No · Color · Description · Qty · Net Wt · Gross Wt · L · W · H · CBM
+Carton Nos · Cartons · Style No · Color · Description ·
+Qty/Ctn · Total Qty · N.W./Ctn · Total N.W. · G.W./Ctn · Total G.W. ·
+L · W · H · CBM/Ctn · Total CBM
 ```
 
-Colour comes from the order line for that product. Carton-level figures — number,
-gross weight, dimensions, CBM — sit on the row that *opens* the carton and are
-blank on its remaining rows, so the totals row can sum a column without counting
-a carton twice. Dimensions are deliberately not totalled. Totals are written as
-`SUM()` formulas so the sheet stays true if someone edits a row.
+Twelve identical cartons of one chair are one row, not twelve. The sheet is as
+long as the order has different items rather than as long as it has boxes, which
+is how a customs officer and a shipping line both read it.
+
+Cartons merge when the box and its single content agree on every printed field —
+product, part, description, quantity, unit, net weight, gross weight and all
+three dimensions. Reweigh one box and it breaks out onto its own row, which is
+the point: a merged row asserts those cartons really are interchangeable. A
+carton holding more than one different product never merges.
+
+`Carton Nos` collapses consecutive numbers to `CTN-001 – CTN-003` and lists the
+runs when they are not consecutive. Per-carton and total columns sit side by
+side; only the totals are summed, since summing a per-carton figure would count
+one box the same as twelve. Dimensions are deliberately not totalled. Totals are
+written as `SUM()` formulas so the sheet stays true if someone edits a row.
+
+Colour comes from the order line for that product.
 
 Available as soon as cartons exist — a draft list is what the floor works from
 while the order is packed — and built from what is **stored**, so the screen
