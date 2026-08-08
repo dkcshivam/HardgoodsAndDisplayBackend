@@ -1,6 +1,8 @@
 from decimal import Decimal
+from io import BytesIO
 
 from django.urls import reverse
+from openpyxl import load_workbook
 from rest_framework.test import APITestCase
 
 from apps.catalog.models import Product, ProductPart
@@ -9,7 +11,9 @@ from apps.masters.models import Merchant
 from .models import Order, OrderLine
 
 
-class PackingApiTests(APITestCase):
+class OrderFixture(APITestCase):
+    """One order: six chairs two-to-a-box, and two tables of two parts each."""
+
     def setUp(self):
         self.merchant = Merchant.objects.create(code="UO", name="Urban Outfitters")
 
@@ -70,6 +74,8 @@ class PackingApiTests(APITestCase):
             ]
         }
 
+
+class PackingApiTests(OrderFixture):
     def test_auto_pack_splits_by_parts_and_pack_per_box(self):
         response = self.client.post(self.url("auto-pack"))
         self.assertEqual(response.status_code, 200)
@@ -145,3 +151,57 @@ class PackingApiTests(APITestCase):
 
         response = self.client.post(self.url("advance-status"))
         self.assertEqual(response.status_code, 400)  # packing -> packed is gated
+
+
+class PackingListTests(OrderFixture):
+    """The Excel document the shipping desk sends out."""
+
+    def rows(self):
+        """Data rows only — between the column headers and the totals."""
+        response = self.client.get(self.url("packing-list"))
+        self.assertEqual(response.status_code, 200)
+
+        sheet = load_workbook(BytesIO(b"".join(response.streaming_content))).active
+        values = list(sheet.iter_rows(values_only=True))
+        start = next(i for i, row in enumerate(values) if row[0] == "Carton No") + 1
+
+        found = []
+        for row in values[start:]:
+            if row[0] and str(row[0]).startswith("TOTAL"):
+                break
+            found.append(row)
+        return found
+
+    def test_it_needs_cartons_before_there_is_anything_to_list(self):
+        response = self.client.get(self.url("packing-list"))
+        self.assertEqual(response.status_code, 400)
+
+    def test_every_packed_item_gets_a_row_carrying_its_order_colour(self):
+        self.client.post(self.url("auto-pack"))
+        rows = self.rows()
+
+        # One row per content line: 3 chair cartons + 4 table part cartons.
+        self.assertEqual(len(rows), 7)
+
+        colors = {row[1]: row[2] for row in rows}
+        self.assertEqual(colors["CHR-01"], "Charcoal Wash")
+        self.assertEqual(colors["TBL-01"], "Natural Oak")
+
+    def test_a_row_carries_the_carton_number_weights_and_box_size(self):
+        self.client.post(self.url("auto-pack"))
+        first = self.rows()[0]
+
+        carton = self.order.cartons.first()
+        self.assertEqual(first[0], carton.carton_no)
+        self.assertEqual(Decimal(str(first[6])), carton.gross_weight_kg)
+        self.assertEqual(
+            [first[7], first[8], first[9]],
+            [carton.length_in, carton.width_in, carton.height_in],
+        )
+
+    def test_the_filename_names_the_order(self):
+        self.client.post(self.url("auto-pack"))
+        response = self.client.get(self.url("packing-list"))
+        self.assertIn(
+            f"packing-list-{self.order.number}.xlsx", response["Content-Disposition"]
+        )
