@@ -47,7 +47,7 @@ class ProductAdmin(admin.ModelAdmin):
         "packing",
         "status",
     )
-    list_filter = ("status", "is_multi_part", "is_fragile", "category")
+    list_filter = ("status", "is_multi_part", "category")
     search_fields = ("style_no", "description", "customs_description", "hsn_code")
     inlines = [ProductImageInline, ProductPartInline]
     readonly_fields = ("derived", "created_at", "updated_at")
@@ -60,7 +60,7 @@ class ProductAdmin(admin.ModelAdmin):
                     "style_no",
                     "description",
                     "category",
-                    ("is_fragile", "status"),
+                    "status",
                 )
             },
         ),

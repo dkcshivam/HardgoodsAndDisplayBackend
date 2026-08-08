@@ -54,12 +54,11 @@ class Product(PackSpec, TimeStampedModel):
         max_length=20, blank=True, help_text="Harmonized System Nomenclature code."
     )
 
+    # Fixed at creation: every carton, order line and packing plan already
+    # written against this SKU assumed one shape or the other.
     is_multi_part = models.BooleanField(
         default=False,
         help_text="On = ships disassembled in several cartons, one per part.",
-    )
-    is_fragile = models.BooleanField(
-        default=False, help_text="Flags careful handling on documents."
     )
     status = models.CharField(
         max_length=10, choices=ProductStatus.choices, default=ProductStatus.ACTIVE

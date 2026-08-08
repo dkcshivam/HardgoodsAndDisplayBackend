@@ -31,7 +31,7 @@ MERCHANTS = [
      "+1 215 555 0777", "Philadelphia", "US"),
 ]
 
-# style_no, description, category, fragile, status, pack_per_box,
+# style_no, description, category, status, pack_per_box,
 # assembled L/W/H/kg, single-box spec or parts
 PRODUCTS = [
     {
@@ -97,7 +97,6 @@ PRODUCTS = [
         "style_no": "DKC-MIR-BRS-08",
         "description": "Brass Floor Mirror",
         "category": "Decor",
-        "fragile": True,
         "assembled": (30, 2, 70, 12),
         "customs": ("Framed Glass Mirror", "7009.92"),
         "single": {"weight": 12, "box_size": (34, 6, 74)},
@@ -148,7 +147,6 @@ PRODUCTS = [
         "style_no": "DKC-CFT-MRB-04",
         "description": "Marble Coffee Table",
         "category": "Table",
-        "fragile": True,
         "status": "inactive",
         "assembled": (48, 24, 18, 28),
         "customs": ("Marble Top Coffee Table", "9403.30"),
@@ -307,7 +305,6 @@ class Command(BaseCommand):
                 customs_description="" if is_multi_part else customs_name,
                 hsn_code="" if is_multi_part else hsn,
                 is_multi_part=is_multi_part,
-                is_fragile=spec.get("fragile", False),
                 status=spec.get("status", "active"),
                 assembled_length_in=d(length),
                 assembled_width_in=d(width),

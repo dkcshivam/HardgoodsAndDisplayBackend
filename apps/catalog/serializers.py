@@ -124,7 +124,6 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
             "customs_description",
             "hsn_code",
             "is_multi_part",
-            "is_fragile",
             "status",
             "assembled_length_in",
             "assembled_width_in",
