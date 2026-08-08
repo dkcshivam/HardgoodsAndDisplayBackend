@@ -220,6 +220,16 @@ class PackingListTests(OrderFixture):
         self.assertEqual(tops[self.RANGE], "CTN-004, CTN-006")
         self.assertEqual(tops[self.COUNT], 2)
 
+    def test_an_evenly_stepped_run_prints_as_a_rule_not_a_list(self):
+        """Four tables put a part's cartons four numbers apart; spelling
+        every one of them out is what fills the cell on a real order."""
+        self.order.lines.filter(product=self.table).update(quantity=4)
+        self.client.post(self.url("auto-pack"))
+        tops = self.rows()[1]
+
+        self.assertEqual(tops[self.RANGE], "CTN-004 – CTN-010 (every 2nd)")
+        self.assertEqual(tops[self.COUNT], 4)
+
     def test_totals_multiply_the_per_carton_figures(self):
         self.client.post(self.url("auto-pack"))
         chairs = self.rows()[0]

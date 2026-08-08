@@ -187,9 +187,13 @@ TRAILING_NUMBER = re.compile(r"(\d+)$")
 
 def _carton_range(cartons: list[Carton]) -> str:
     """
-    `CTN-001 – CTN-012` for a run, and the runs listed when they are not
-    consecutive — auto-pack numbers a multi-part product's cartons in
-    packing order, so one part's boxes are every second number.
+    `CTN-001 – CTN-012` for a run.
+
+    Auto-pack numbers a multi-part product's cartons one whole unit at a
+    time, so a single part's boxes step evenly rather than run consecutively.
+    Spelling all fifteen of them out fills the cell, so an even step is
+    printed as `CTN-001 – CTN-029 (every 2nd)`. Anything less regular — a
+    plan someone has edited by hand — falls back to listing its runs.
     """
     labels = [(carton.carton_no or "").strip() for carton in cartons]
     if len(labels) == 1:
@@ -199,19 +203,35 @@ def _carton_range(cartons: list[Carton]) -> str:
     if not all(numbered):
         return ", ".join(labels)
 
-    pairs = sorted(
-        zip((int(match.group(1)) for match in numbered), labels), key=lambda p: p[0]
-    )
+    pairs = sorted(zip((int(match.group(1)) for match in numbered), labels))
+    numbers = [number for number, _ in pairs]
+    first, last = pairs[0][1], pairs[-1][1]
+
+    steps = {b - a for a, b in zip(numbers, numbers[1:])}
+    if steps == {1}:
+        return f"{first} – {last}"
+    # Two cartons two apart read better as the pair than as a rule.
+    if len(steps) == 1 and len(pairs) >= 3:
+        return f"{first} – {last} (every {_ordinal(steps.pop())})"
 
     runs, start = [], 0
     for index in range(1, len(pairs) + 1):
-        if index == len(pairs) or pairs[index][0] != pairs[index - 1][0] + 1:
+        if index == len(pairs) or numbers[index] != numbers[index - 1] + 1:
             runs.append((start, index - 1))
             start = index
 
     return ", ".join(
         pairs[a][1] if a == b else f"{pairs[a][1]} – {pairs[b][1]}" for a, b in runs
     )
+
+
+ORDINAL_SUFFIX = {1: "st", 2: "nd", 3: "rd"}
+
+
+def _ordinal(number: int) -> str:
+    if 11 <= number % 100 <= 13:
+        return f"{number}th"
+    return f"{number}{ORDINAL_SUFFIX.get(number % 10, 'th')}"
 
 
 def _times(value: Decimal | None, count: int) -> Decimal | None:
