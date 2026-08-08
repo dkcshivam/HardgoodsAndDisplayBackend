@@ -171,6 +171,8 @@ class ProductPart(PackSpec):
 
 
 def product_image_path(instance, filename):
+    if instance.part_id:
+        return f"products/parts/{instance.part_id}/{filename}"
     return f"products/{instance.product_id or 'unassigned'}/{filename}"
 
 
@@ -204,7 +206,8 @@ class ProductImage(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["sort_order", "id"]
+        # Main first, so the leading image is the one lists and summaries want.
+        ordering = ["-is_main", "sort_order", "id"]
         constraints = [
             models.CheckConstraint(
                 condition=(

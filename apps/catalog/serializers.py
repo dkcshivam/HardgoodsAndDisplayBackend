@@ -5,9 +5,20 @@ from .models import Product, ProductImage, ProductPart
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
+    """Read nested under a product or part; written by the upload endpoint."""
+
     class Meta:
         model = ProductImage
-        fields = ["id", "image", "is_main", "sort_order"]
+        fields = ["id", "product", "part", "image", "is_main", "sort_order"]
+
+    def validate(self, attrs):
+        product = attrs.get("product", getattr(self.instance, "product", None))
+        part = attrs.get("part", getattr(self.instance, "part", None))
+        if bool(product) == bool(part):
+            raise serializers.ValidationError(
+                "A photo belongs to exactly one owner — send either product or part."
+            )
+        return attrs
 
 
 class DerivedFieldsMixin(metaclass=serializers.SerializerMetaclass):
@@ -60,6 +71,7 @@ class ProductListSerializer(serializers.ModelSerializer):
 
     category_name = serializers.CharField(source="category.name", default="", read_only=True)
     part_count = serializers.IntegerField(source="parts.count", read_only=True)
+    main_image = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -72,9 +84,18 @@ class ProductListSerializer(serializers.ModelSerializer):
             "is_multi_part",
             "part_count",
             "pack_per_box",
-            "is_fragile",
+            "main_image",
             "status",
         ]
+
+    def get_main_image(self, product):
+        # Images order main-first, so the first one is the one to show.
+        image = next(iter(product.images.all()), None)
+        if not image:
+            return None
+        request = self.context.get("request")
+        url = image.image.url
+        return request.build_absolute_uri(url) if request else url
 
 
 class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):

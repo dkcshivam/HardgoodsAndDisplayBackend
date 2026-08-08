@@ -1,7 +1,7 @@
 from rest_framework import viewsets
 
-from .models import Product
-from .serializers import ProductListSerializer, ProductSerializer
+from .models import Product, ProductImage
+from .serializers import ProductImageSerializer, ProductListSerializer, ProductSerializer
 
 
 class ProductViewSet(viewsets.ModelViewSet):
@@ -20,3 +20,28 @@ class ProductViewSet(viewsets.ModelViewSet):
         if self.action == "list":
             return ProductListSerializer
         return ProductSerializer
+
+
+class ProductImageViewSet(viewsets.ModelViewSet):
+    """
+    Photos arrive one at a time as multipart, after their owner exists — a
+    product or part has to have an id before a file can point at it.
+    """
+
+    queryset = ProductImage.objects.select_related("product", "part")
+    serializer_class = ProductImageSerializer
+    filterset_fields = ["product", "part"]
+
+    def perform_create(self, serializer):
+        owner = {
+            key: value
+            for key, value in serializer.validated_data.items()
+            if key in {"product", "part"} and value
+        }
+        first = not ProductImage.objects.filter(**owner).exists()
+        # The first photo of an owner is its main one until told otherwise.
+        serializer.save(is_main=serializer.validated_data.get("is_main", False) or first)
+
+    def perform_destroy(self, instance):
+        instance.image.delete(save=False)
+        instance.delete()

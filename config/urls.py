@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from apps.catalog.views import ProductViewSet
+from apps.catalog.views import ProductImageViewSet, ProductViewSet
 from apps.masters.views import CategoryViewSet, MerchantViewSet
 from apps.orders.views import OrderViewSet
 
@@ -13,6 +13,7 @@ router = DefaultRouter()
 router.register("categories", CategoryViewSet)
 router.register("merchants", MerchantViewSet)
 router.register("products", ProductViewSet)
+router.register("product-images", ProductImageViewSet)
 router.register("orders", OrderViewSet)
 
 urlpatterns = [
