@@ -439,11 +439,11 @@ three dimensions. Reweigh one box and it breaks out onto its own row, which is
 the point: a merged row asserts those cartons really are interchangeable. A
 carton holding more than one different product never merges.
 
-`Carton Nos` collapses consecutive numbers to `CTN-001 – CTN-003`. Auto-pack
-numbers a multi-part product one whole unit at a time, so a single part's boxes
-step evenly instead of running consecutively; an even step prints as
-`CTN-001 – CTN-029 (every 2nd)` rather than filling the cell with fifteen
-numbers. Anything less regular — a plan edited by hand — lists its runs.
+`Carton Nos` collapses consecutive numbers to `CTN-001 – CTN-003`, and names
+each run when a hand-edited plan leaves gaps: `CTN-001 – CTN-003, CTN-007`.
+Every number a row covers is either printed or inside a printed run — nothing
+is abbreviated into a rule the reader has to decode. Auto-pack numbers each
+part's cartons together precisely so this stays a plain range.
 Per-carton and total columns sit side by
 side; only the totals are summed, since summing a per-carton figure would count
 one box the same as twelve. Dimensions are deliberately not totalled. Totals are

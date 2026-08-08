@@ -227,24 +227,26 @@ class PackingListTests(OrderFixture):
         self.assertEqual(chairs[self.RANGE], "CTN-001 – CTN-003")
         self.assertEqual(chairs[self.COUNT], 3)
 
-    def test_cartons_that_do_not_run_consecutively_are_listed(self):
-        """Auto-pack numbers a multi-part product one whole unit at a time,
-        so a single part's cartons are every second number."""
-        self.client.post(self.url("auto-pack"))
-        tops = self.rows()[1]
-
-        self.assertEqual(tops[self.RANGE], "CTN-004, CTN-006")
-        self.assertEqual(tops[self.COUNT], 2)
-
-    def test_an_evenly_stepped_run_prints_as_a_rule_not_a_list(self):
-        """Four tables put a part's cartons four numbers apart; spelling
-        every one of them out is what fills the cell on a real order."""
+    def test_each_part_gets_one_unbroken_range(self):
         self.order.lines.filter(product=self.table).update(quantity=4)
         self.client.post(self.url("auto-pack"))
-        tops = self.rows()[1]
+        tops, legs = self.rows()[1], self.rows()[2]
 
-        self.assertEqual(tops[self.RANGE], "CTN-004 – CTN-010 (every 2nd)")
-        self.assertEqual(tops[self.COUNT], 4)
+        self.assertEqual(tops[self.RANGE], "CTN-004 – CTN-007")
+        self.assertEqual(legs[self.RANGE], "CTN-008 – CTN-011")
+
+    def test_a_hand_edited_plan_with_gaps_names_every_run(self):
+        """Nothing is abbreviated away: each number a row covers is either
+        printed or inside a printed run."""
+        def renumber(cartons):
+            # Push the third chair carton clear of the first two.
+            cartons[2]["carton_no"] = "CTN-009"
+
+        self.repack(renumber)
+        chairs = self.rows()[0]
+
+        self.assertEqual(chairs[self.RANGE], "CTN-001 – CTN-002, CTN-009")
+        self.assertEqual(chairs[self.COUNT], 3)
 
     def test_totals_multiply_the_per_carton_figures(self):
         self.client.post(self.url("auto-pack"))

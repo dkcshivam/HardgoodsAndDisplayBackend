@@ -187,13 +187,13 @@ TRAILING_NUMBER = re.compile(r"(\d+)$")
 
 def _carton_range(cartons: list[Carton]) -> str:
     """
-    `CTN-001 – CTN-012` for a run.
+    `CTN-001 – CTN-012` for a run, and each run named when a hand-edited
+    plan leaves gaps: `CTN-001 – CTN-003, CTN-007`.
 
-    Auto-pack numbers a multi-part product's cartons one whole unit at a
-    time, so a single part's boxes step evenly rather than run consecutively.
-    Spelling all fifteen of them out fills the cell, so an even step is
-    printed as `CTN-001 – CTN-029 (every 2nd)`. Anything less regular — a
-    plan someone has edited by hand — falls back to listing its runs.
+    Every number a row covers is either printed or inside a printed run.
+    A shorthand for the gaps would be shorter, but a range that has to be
+    decoded is one somebody miscounts, and this document is read by people
+    who will not ask.
     """
     labels = [(carton.carton_no or "").strip() for carton in cartons]
     if len(labels) == 1:
@@ -205,14 +205,6 @@ def _carton_range(cartons: list[Carton]) -> str:
 
     pairs = sorted(zip((int(match.group(1)) for match in numbered), labels))
     numbers = [number for number, _ in pairs]
-    first, last = pairs[0][1], pairs[-1][1]
-
-    steps = {b - a for a, b in zip(numbers, numbers[1:])}
-    if steps == {1}:
-        return f"{first} – {last}"
-    # Two cartons two apart read better as the pair than as a rule.
-    if len(steps) == 1 and len(pairs) >= 3:
-        return f"{first} – {last} (every {_ordinal(steps.pop())})"
 
     runs, start = [], 0
     for index in range(1, len(pairs) + 1):
@@ -223,15 +215,6 @@ def _carton_range(cartons: list[Carton]) -> str:
     return ", ".join(
         pairs[a][1] if a == b else f"{pairs[a][1]} – {pairs[b][1]}" for a, b in runs
     )
-
-
-ORDINAL_SUFFIX = {1: "st", 2: "nd", 3: "rd"}
-
-
-def _ordinal(number: int) -> str:
-    if 11 <= number % 100 <= 13:
-        return f"{number}th"
-    return f"{number}{ORDINAL_SUFFIX.get(number % 10, 'th')}"
 
 
 def _times(value: Decimal | None, count: int) -> Decimal | None:
