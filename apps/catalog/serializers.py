@@ -47,6 +47,9 @@ PACK_SPEC_FIELDS = [
 
 
 class ProductPartSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
+    # Kept on write so an edit can match a payload row to the part it edits;
+    # without it every save would recreate the parts and drop their photos.
+    id = serializers.IntegerField(required=False)
     images = ProductImageSerializer(many=True, read_only=True)
 
     class Meta:
@@ -183,7 +186,7 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
     def create(self, validated_data):
         parts_data = validated_data.pop("parts", [])
         product = Product.objects.create(**validated_data)
-        self._write_parts(product, parts_data)
+        self._sync_parts(product, parts_data)
         return product
 
     @transaction.atomic
@@ -196,14 +199,32 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
 
         if parts_data is not None:
             # The form always sends the complete list.
-            instance.parts.all().delete()
-            self._write_parts(instance, parts_data)
+            self._sync_parts(instance, parts_data)
 
         return instance
 
     @staticmethod
-    def _write_parts(product, parts_data):
-        for index, part in enumerate(parts_data):
-            part.pop("id", None)
-            part.setdefault("sort_order", index)
-            ProductPart.objects.create(product=product, **part)
+    def _sync_parts(product, parts_data):
+        """
+        Match payload rows to existing parts by id and update them in place.
+        Recreating them instead would cascade their photos away on every save,
+        and orphan any carton content pointing at them.
+        """
+        existing = {part.id: part for part in product.parts.all()}
+        kept = set()
+
+        for index, data in enumerate(parts_data):
+            part_id = data.pop("id", None)
+            data.setdefault("sort_order", index)
+            part = existing.get(part_id)
+
+            if part is None:
+                part = ProductPart.objects.create(product=product, **data)
+            else:
+                for attr, value in data.items():
+                    setattr(part, attr, value)
+                part.save()
+
+            kept.add(part.id)
+
+        product.parts.exclude(id__in=kept).delete()

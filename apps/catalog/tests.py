@@ -44,6 +44,50 @@ class ProductShapeTests(APITestCase):
         )
         self.assertEqual(response.status_code, 200)
 
+    def test_editing_parts_keeps_their_rows(self):
+        """
+        Recreating parts on every save would cascade their photos away, and
+        orphan any carton content pointing at them.
+        """
+        payload = {
+            "style_no": "TBL-01",
+            "description": "Table",
+            "is_multi_part": True,
+            "parts": [
+                {"id": self.parts[0].pk, "name": "Table top", "sort_order": 0},
+                {"id": self.parts[1].pk, "name": "Legs set", "sort_order": 1},
+            ],
+        }
+        response = self.client.put(
+            f"/api/products/{self.table.pk}/", payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [part.pk for part in self.parts],
+            list(self.table.parts.values_list("id", flat=True)),
+        )
+        self.parts[0].refresh_from_db()
+        self.assertEqual(self.parts[0].name, "Table top")
+
+    def test_a_part_dropped_from_the_payload_is_deleted(self):
+        payload = {
+            "style_no": "TBL-01",
+            "description": "Table",
+            "is_multi_part": True,
+            "parts": [
+                {"id": self.parts[0].pk, "name": "Top", "sort_order": 0},
+                {"name": "Fixings", "sort_order": 1},
+            ],
+        }
+        response = self.client.put(
+            f"/api/products/{self.table.pk}/", payload, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.table.parts.count(), 2)
+        self.assertFalse(ProductPart.objects.filter(pk=self.parts[1].pk).exists())
+
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class ProductPhotoTests(APITestCase):
@@ -82,6 +126,23 @@ class ProductPhotoTests(APITestCase):
 
         self.assertFalse(ProductImage.objects.get(pk=first.data["id"]).is_main)
         self.assertTrue(ProductImage.objects.get(pk=second.data["id"]).is_main)
+
+    def test_part_photos_survive_a_product_save(self):
+        self.post(image=upload(), part=self.part.pk)
+
+        response = self.client.patch(
+            f"/api/products/{self.table.pk}/",
+            {
+                "parts": [
+                    {"id": self.part.pk, "name": "Table top", "sort_order": 0},
+                    {"name": "Legs set", "sort_order": 1},
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.part.images.count(), 1)
 
     def test_the_product_list_carries_the_main_photo(self):
         self.post(image=upload(), product=self.chair.pk)
