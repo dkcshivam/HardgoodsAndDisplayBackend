@@ -45,6 +45,12 @@ def build_packing_plan(order: Order) -> list[PlannedCarton]:
     Multi-part: one carton per part, per ordered unit — 3 tables × 2 parts
     = 6 cartons. Single-box: quantity split by pack_per_box.
 
+    A part's cartons are numbered together, so each part occupies one
+    unbroken run. Interleaving them by unit put a part's boxes on every
+    second number, which the packing list could only describe as a rule —
+    and a carton range nobody can read at a glance is one somebody
+    miscounts at a port.
+
     A proposal, not a decision. Every value stays editable afterwards.
     """
     planned: list[PlannedCarton] = []
@@ -57,8 +63,8 @@ def build_packing_plan(order: Order) -> list[PlannedCarton]:
 
         if product.is_multi_part:
             parts = list(product.parts.all())
-            for _unit in range(line.quantity):
-                for part in parts:
+            for part in parts:
+                for _unit in range(line.quantity):
                     planned.append(
                         PlannedCarton(
                             carton_no=_carton_no(sequence),

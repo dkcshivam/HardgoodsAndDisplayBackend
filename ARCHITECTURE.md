@@ -373,7 +373,7 @@ the moment the save returns.
 
 For each order line:
 
-**Multi-part product** — for each ordered unit, emit one carton per part.
+**Multi-part product** — for each part, emit one carton per ordered unit.
 Quantity 1, box and dimensions from that part, gross from that part's weights.
 *3 tables × 2 parts = 6 cartons.*
 
@@ -382,6 +382,13 @@ Quantity 1, box and dimensions from that part, gross from that part's weights.
 *6 chairs at 2/box = 3 cartons.*
 
 Carton numbers run sequentially `CTN-001`, `CTN-002`, …
+
+Parts are the outer loop so each part's cartons form one unbroken run —
+`CTN-004 – CTN-006` for the tops, `CTN-007 – CTN-009` for the leg sets.
+Numbering one whole unit at a time instead would put a part's boxes on every
+second number, which the packing list could only print as a rule; a carton
+range that has to be decoded is one somebody miscounts at a port. The floor
+therefore packs all of one part, then all of the next.
 
 Auto-pack **replaces** the existing plan. It is a proposal; every field remains
 editable afterwards, because the box actually used is not always the box planned.

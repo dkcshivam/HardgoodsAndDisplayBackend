@@ -83,6 +83,22 @@ class PackingApiTests(OrderFixture):
         self.assertEqual(response.data["carton_count"], 7)
         self.assertTrue(response.data["can_save"])
 
+    def test_a_parts_cartons_are_numbered_together(self):
+        """One unbroken run per part, so the packing list can name a range
+        rather than every second number."""
+        self.client.post(self.url("auto-pack"))
+        cartons = self.client.get(self.url("packing")).data["cartons"]
+
+        by_part = {}
+        for carton in cartons:
+            for content in carton["contents"]:
+                by_part.setdefault(content["description"], []).append(
+                    carton["carton_no"]
+                )
+
+        self.assertEqual(by_part["Table — Top"], ["CTN-004", "CTN-005"])
+        self.assertEqual(by_part["Table — Legs"], ["CTN-006", "CTN-007"])
+
     def test_packing_accepts_both_get_and_put(self):
         """Regression: a second @action on the same url_path shadowed the PUT."""
         self.client.post(self.url("auto-pack"))
