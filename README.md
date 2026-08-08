@@ -41,8 +41,8 @@ Migrations run automatically every time the container starts.
 | Path | What it holds |
 |---|---|
 | `apps/common/calc.py` | The maths. Source of truth for every weight and volume. |
-| `apps/masters/` | Box types, categories, product groups, merchants |
+| `apps/masters/` | Categories and merchants |
 | `apps/catalog/` | Products and their parts — the packing recipes |
-| `apps/orders/` | Orders, cartons, and `services.py`, the packing engine |
+| `apps/orders/` | Orders, cartons, `services.py` (the packing engine) and `exports.py` (the packing list) |
 | `config/` | Settings and URL routing |
 | `ARCHITECTURE.md` | **The spec.** Read this before changing behaviour. |

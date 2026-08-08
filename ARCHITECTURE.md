@@ -174,7 +174,7 @@ Nine tables in three groups, mirroring `apps/`.
 ### catalog
 
 **Product** — `style_no`(unique) · `description` · `category`→ ·
-`customs_description` · `hsn_code` · `is_multi_part` · `is_fragile` · `status` ·
+`customs_description` · `hsn_code` · `is_multi_part` · `status` ·
 `assembled_{length,width,height}_in` · `assembled_weight_kg` · `pack_per_box` ·
 *plus the PackSpec block*
 
@@ -184,12 +184,21 @@ Nine tables in three groups, mirroring `apps/`.
 **ProductImage** — `product`→ *or* `part`→ (exactly one, enforced by CHECK
 constraint) · `image` · `is_main` · `sort_order`
 
+Rows order main-first, so the leading image is the one lists and summaries want.
+The first photo an owner receives becomes its main one until another is chosen.
+
 ### orders
 
 **Order** — `number`(unique, generated) · `name` · `merchant`→ · `buyer_name` ·
 `ship_{country,line1,line2,city,state,postal_code}` · `status`
 
-**OrderLine** — `order`→ · `product`→ · `quantity` — unique on `(order, product)`
+**OrderLine** — `order`→ · `product`→ · `color` · `quantity` — unique on
+`(order, product)`
+
+`color` lives here, not on Product: the same style ships in whatever finish the
+merchant asked for this time, and the packing list prints it. One colour per
+product per order — two finishes of one style in a single order would need
+colour on `CartonContent` too, and is not supported.
 
 **Carton** — `order`→ · `carton_no` · `{length,width,height}_in` ·
 `gross_weight_kg` · `sort_order` — unique on `(order, carton_no)`
@@ -224,6 +233,12 @@ net_weight_kg · gross_weight_kg · cbm     (properties, not columns)
 
 The constraint that a multi-part product has no box of its own is enforced in
 `Product.clean()` and in `ProductSerializer.validate()`.
+
+`is_multi_part` is **fixed once the product is saved**. Changing it would silently
+re-interpret every carton, weight and reconciliation already recorded against the
+style number. `ProductSerializer.validate()` rejects the change, Django Admin
+renders the field read-only on an existing row, and the product form replaces the
+chooser with the chosen shape. A different shape means a different style number.
 
 ---
 
@@ -337,6 +352,23 @@ list wherever the frontend runs.
 
 ## 7. Business rules
 
+### Editing a product
+
+`is_multi_part` cannot change after creation (§5). Everything else can, because
+the packing recipe is expected to be corrected as the item is weighed and boxed
+for real.
+
+Parts are matched to their existing rows by `id` when a product is saved, so
+editing a part keeps its photos and keeps any carton content pointing at it.
+A part absent from the payload is deleted.
+
+### Photos
+
+A photo belongs to exactly one owner — a product or a part, never both — and can
+only be attached once that owner has an id. The product form therefore queues
+photos taken against an unsaved product or a newly added part and uploads them
+the moment the save returns.
+
 ### Auto-pack
 
 For each order line:
@@ -378,6 +410,26 @@ The packing plan cannot be saved while any of these hold:
 Save validates inside a transaction and rolls back on any blocker, so a plan with
 known problems cannot reach the database whatever the client does.
 
+### Packing list
+
+`GET /orders/{id}/packing-list/` renders the stored plan as an Excel sheet: a
+heading block naming the order, merchant, buyer and ship-to address, then one row
+per carton content —
+
+```
+Carton No · Style No · Color · Description · Qty · Net Wt · Gross Wt · L · W · H · CBM
+```
+
+Colour comes from the order line for that product. Carton-level figures — number,
+gross weight, dimensions, CBM — sit on the row that *opens* the carton and are
+blank on its remaining rows, so the totals row can sum a column without counting
+a carton twice. Dimensions are deliberately not totalled. Totals are written as
+`SUM()` formulas so the sheet stays true if someone edits a row.
+
+Available as soon as cartons exist — a draft list is what the floor works from
+while the order is packed — and built from what is **stored**, so the screen
+disables the button while there are unsaved edits.
+
 ### Status ladder
 
 ```
@@ -416,7 +468,14 @@ means the function is already available through Django Admin.
 | 11 | Packing — draft, blocked | ✅ Built |
 | 12 | Packing — reconciled, saved | ✅ Built |
 
-Photo upload is the one gap in the product form — the API has no upload endpoint yet.
+Every Hardgoods screen is built. Photos are part of the product form: a gallery
+on the product itself — the item for a single-box product, the assembled item for
+a multi-part one — and a second gallery inside each part card, since a packer
+needs to see the component, not the finished piece. Both take files from disk or
+a photo from the device camera, captured in the app.
+
+The packing screen carries a **Packing list** button that downloads the Excel
+document described in §7.
 
 ### Display (deferred)
 
@@ -469,18 +528,20 @@ Base: `/api/`. DRF `PageNumberPagination`, page size 50.
 |---|---|---|
 | `/categories/` | CRUD | |
 | `/merchants/` | CRUD | |
-| `/products/` | CRUD | light serializer on list, full on detail; parts written in the same request |
-| `/orders/` | CRUD | nested `lines`; `shipping_address` nested on read and write |
+| `/products/` | CRUD | light serializer on list (carries `main_image`), full on detail; parts written in the same request |
+| `/product-images/` | POST | multipart: `image` plus `product` **or** `part` |
+| `/product-images/{id}/` | PATCH, DELETE | `is_main` promotion; delete removes the file too |
+| `/orders/` | CRUD | nested `lines` (each with `color`); `shipping_address` nested on read and write |
 | `/orders/{id}/packing/` | GET | full plan: cartons, reconciliation, blockers, totals, `can_save` |
 | `/orders/{id}/packing/` | PUT | replace all cartons; 400 + blockers if invalid |
 | `/orders/{id}/auto-pack/` | POST | build and apply a proposed plan |
 | `/orders/{id}/advance-status/` | POST | one rung up the ladder; gated at `packed` |
+| `/orders/{id}/packing-list/` | GET | the plan as `.xlsx`; 400 while the order has no cartons |
 
 `GET /orders/{id}/packing/` returns everything the packing screen needs to render
 itself in a single response.
 
-**Not yet implemented:** authentication (the API is currently open), photo upload
-endpoints, packing-list document generation.
+**Not yet implemented:** authentication (the API is currently open).
 
 ---
 
@@ -529,13 +590,17 @@ cartons can hold mixed contents on the same schema.
 2. **Weighing workflow** — what happens when weight is unknown at product-creation
    time. Determines whether weight fields may be null, which affects auto-pack
    output and blocker behaviour.
-3. **Photo management depth** — whether rotation and cropping are needed beyond
-   upload and set-main.
+3. **Photo management depth** — upload, camera capture, set-main and delete are
+   built. Whether rotation, cropping or client-side downscaling are needed is
+   still open; camera captures currently upload at the sensor's full resolution.
 4. **Authentication and roles** — the sidebar shows a user; no auth exists. Must
    be resolved before any deployment.
 5. **Order status coverage** — no `cancelled` or `on-hold` state. Retrofitting an
    enum later is disruptive.
-6. **Packing list document** — format, fields, and whether it is PDF or Excel.
+6. **Two colours of one style in one order** — colour sits on the order line and
+   `(order, product)` is unique, so a single order cannot ask for the same style
+   in two finishes. Supporting it means colour on `CartonContent` and a
+   reconciliation keyed by colour as well as part.
 7. **Photo storage** — local `MEDIA_ROOT` in development; needs an object store
    before deployment.
 
@@ -552,9 +617,9 @@ Vertical slices — database, API and screen for one feature at a time.
 - [x] **2** Merchants screen
 - [x] **4** Product form — single-box path
 - [x] **5** Product form — multi-part path
-- [ ] **6** Photo upload
+- [x] **6** Photo upload — product and part galleries, file picker or in-app camera
 - [x] **7** Orders — list and create
 - [x] **8** Packing workspace
-- [ ] **9** Packing list document
+- [x] **9** Packing list document — Excel, per order, colour from the order line
 - [ ] **10** Authentication
 - [ ] **11** Display module
