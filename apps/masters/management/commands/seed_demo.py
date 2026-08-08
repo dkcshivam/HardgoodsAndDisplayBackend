@@ -179,6 +179,8 @@ UO_ADDRESS = {
     "ship_postal_code": "19112",
 }
 
+# Order lines are (style_no, quantity, colour) — the same SKU ships in
+# whatever finish that order asked for.
 ORDERS = [
     {
         "name": "UO Fall Dining Refresh",
@@ -186,7 +188,11 @@ ORDERS = [
         "buyer": "Dana Whitfield",
         "address": UO_ADDRESS,
         "status": "draft",
-        "lines": [("DKC-TBL-OAK-01", 3), ("DKC-CHR-OAK-02", 6), ("DKC-MIR-BRS-08", 4)],
+        "lines": [
+            ("DKC-TBL-OAK-01", 3, "Natural Oak"),
+            ("DKC-CHR-OAK-02", 6, "Natural Oak"),
+            ("DKC-MIR-BRS-08", 4, "Antique Brass"),
+        ],
     },
     {
         "name": "UO Spring Seating",
@@ -194,7 +200,10 @@ ORDERS = [
         "buyer": "Dana Whitfield",
         "address": UO_ADDRESS,
         "status": "packing",
-        "lines": [("DKC-CHR-OAK-02", 20), ("DKC-STL-OAK-05", 12)],
+        "lines": [
+            ("DKC-CHR-OAK-02", 20, "Charcoal Wash"),
+            ("DKC-STL-OAK-05", 12, "Natural Oak"),
+        ],
     },
     {
         "name": "Terrain Patio Set",
@@ -208,7 +217,10 @@ ORDERS = [
             "ship_postal_code": "97214",
         },
         "status": "packed",
-        "lines": [("DKC-TBL-OAK-01", 2), ("DKC-CHR-OAK-02", 8)],
+        "lines": [
+            ("DKC-TBL-OAK-01", 2, "Whitewash"),
+            ("DKC-CHR-OAK-02", 8, "Whitewash"),
+        ],
     },
     {
         "name": "West Elm Bookcases",
@@ -222,7 +234,7 @@ ORDERS = [
             "ship_postal_code": "11201",
         },
         "status": "shipped",
-        "lines": [("DKC-BKC-WAL-03", 15)],
+        "lines": [("DKC-BKC-WAL-03", 15, "Dark Walnut")],
     },
     {
         "name": "UO Bar Refresh",
@@ -230,7 +242,10 @@ ORDERS = [
         "buyer": "Dana Whitfield",
         "address": UO_ADDRESS,
         "status": "draft",
-        "lines": [("DKC-STL-OAK-05", 24), ("DKC-SDB-WAL-07", 4)],
+        "lines": [
+            ("DKC-STL-OAK-05", 24, "Natural Oak"),
+            ("DKC-SDB-WAL-07", 4, "Dark Walnut"),
+        ],
     },
 ]
 
@@ -364,9 +379,12 @@ class Command(BaseCommand):
                 status=spec["status"],
                 **spec["address"],
             )
-            for style_no, quantity in spec["lines"]:
+            for style_no, quantity, color in spec["lines"]:
                 OrderLine.objects.create(
-                    order=order, product=products[style_no], quantity=quantity
+                    order=order,
+                    product=products[style_no],
+                    quantity=quantity,
+                    color=color,
                 )
 
             # Drafts are left empty so the packing screen's blank state shows.

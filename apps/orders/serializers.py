@@ -28,6 +28,7 @@ class OrderLineSerializer(serializers.ModelSerializer):
             "product",
             "product_style_no",
             "product_description",
+            "color",
             "quantity",
         ]
 

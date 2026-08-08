@@ -102,6 +102,11 @@ class OrderLine(models.Model):
     )
     quantity = models.PositiveIntegerField()
 
+    # Lives here rather than on Product because the same SKU ships in
+    # whatever finish the merchant asked for this time. The packing list
+    # prints it, so it is a property of the order, not of the recipe.
+    color = models.CharField(max_length=60, blank=True, help_text="e.g. Natural Oak")
+
     class Meta:
         ordering = ["id"]
         constraints = [
@@ -111,7 +116,10 @@ class OrderLine(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.product.style_no} × {self.quantity}"
+        label = self.product.style_no
+        if self.color:
+            label = f"{label} ({self.color})"
+        return f"{label} × {self.quantity}"
 
 
 class Carton(models.Model):

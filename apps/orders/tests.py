@@ -33,8 +33,12 @@ class PackingApiTests(APITestCase):
             )
 
         self.order = Order.objects.create(name="Test", merchant=self.merchant)
-        OrderLine.objects.create(order=self.order, product=self.chair, quantity=6)
-        OrderLine.objects.create(order=self.order, product=self.table, quantity=2)
+        OrderLine.objects.create(
+            order=self.order, product=self.chair, quantity=6, color="Charcoal Wash"
+        )
+        OrderLine.objects.create(
+            order=self.order, product=self.table, quantity=2, color="Natural Oak"
+        )
 
     def url(self, name):
         return reverse(f"order-{name}", args=[self.order.pk])

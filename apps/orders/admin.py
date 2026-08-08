@@ -6,6 +6,7 @@ from .models import Carton, CartonContent, Order, OrderLine
 class OrderLineInline(admin.TabularInline):
     model = OrderLine
     extra = 0
+    fields = ("product", "color", "quantity")
     autocomplete_fields = ("product",)
 
 
