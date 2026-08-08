@@ -17,6 +17,34 @@ def upload(name="photo.gif"):
     return SimpleUploadedFile(name, PIXEL_GIF, content_type="image/gif")
 
 
+class ProductShapeTests(APITestCase):
+    """`is_multi_part` decides how every carton for the SKU is built."""
+
+    def setUp(self):
+        self.table = Product.objects.create(
+            style_no="TBL-01", description="Table", is_multi_part=True
+        )
+        self.parts = [
+            ProductPart.objects.create(product=self.table, name=name, sort_order=index)
+            for index, name in enumerate(("Top", "Legs"))
+        ]
+
+    def test_shape_cannot_change_after_creation(self):
+        response = self.client.patch(
+            f"/api/products/{self.table.pk}/", {"is_multi_part": False}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("is_multi_part", response.data)
+
+    def test_resending_the_same_shape_is_not_a_change(self):
+        response = self.client.patch(
+            f"/api/products/{self.table.pk}/",
+            {"is_multi_part": True, "description": "Oak Table"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class ProductPhotoTests(APITestCase):
     def setUp(self):

@@ -108,6 +108,11 @@ class ProductAdmin(admin.ModelAdmin):
         ("Record", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
+    def get_readonly_fields(self, request, obj=None):
+        fields = super().get_readonly_fields(request, obj)
+        # Same rule as the API: the shape is fixed once the product exists.
+        return (*fields, "is_multi_part") if obj else fields
+
     @admin.display(description="packing")
     def packing(self, obj):
         if obj.is_multi_part:

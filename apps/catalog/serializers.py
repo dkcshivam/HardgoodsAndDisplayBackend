@@ -146,6 +146,16 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
         )
         parts = attrs.get("parts")
 
+        # The shape decides how every carton for this SKU is built, so orders
+        # already packed under one shape would silently change meaning.
+        if self.instance and is_multi_part != self.instance.is_multi_part:
+            raise serializers.ValidationError(
+                {
+                    "is_multi_part": "How a product packs is fixed once it is saved. "
+                    "Create a new style number for a different shape."
+                }
+            )
+
         if is_multi_part:
             own_box = [f for f in Product.OWN_BOX_FIELDS if attrs.get(f) is not None]
             if own_box:
