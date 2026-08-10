@@ -48,9 +48,9 @@ level, no invoicing. Every attribute in the catalogue answers one question:
 
 **In scope now:** the Hardgoods module — furniture and homeware.
 
-**Deferred:** the Display module — store decor (wreaths, bows, garlands). Its
-screens and sample data are designed but not built. It differs structurally
-(see §10) and the schema already accommodates it.
+**Specified, not built:** the Display module — store decor and small goods. It
+differs structurally enough to be its own Django app with its own tables,
+sharing only the arithmetic in `apps/common`. Fully described in §10.
 
 **Not yet designed:** authentication and roles, packing-list document generation,
 photo editing beyond upload and set-main.
@@ -256,12 +256,15 @@ appears on a customs document. If it is never stored it can never be stale.
 
 ### D2 — Carton and CartonContent are separate tables
 
-*Rationale:* Hardgoods puts one product (or one part) per carton, so flattening
-contents onto `Carton` would work today. Display packs several different products
-into one carton from a template, and would not. Splitting later means rebuilding
-the packing screen, the API and migrating live data.
+*Rationale:* a Hardgoods carton needs `part_id` on its contents for D3 to make
+reconciliation exact, and that does not flatten onto `Carton`.
 
 *Cost:* one extra table and one join. Accepted.
+
+*Amended:* this decision originally rested a second argument on Display sharing
+the table for its mixed-content cartons. Display now has its own tables (§10.1),
+so only the D3 rationale above still stands. The decision is unchanged; one of
+its two reasons is gone.
 
 ### D3 — `part_id` on CartonContent makes reconciliation exact
 
@@ -502,18 +505,34 @@ a photo from the device camera, captured in the app.
 The packing screen carries a **Packing list** button that downloads the Excel
 document described in §7.
 
-### Display (deferred)
+### Display (specified in §10, not built)
 
 | # | Screen | Status |
 |---|---|---|
-| 13 | Display Products — list | Not built |
-| 14 | Display Stores — list | Not built |
-| 15 | Display Pack Templates — list | Not built |
-| 16 | Display Orders — list | Not built |
-| 17 | Display Order — store picker | Not built |
-| 18a | Display Order — matrix entry (product × store) | Not built |
-| 18b | Display Order — Excel import (alternative path) | Not built |
-| 19 | Display Packing — template auto-pack with remainders | Not built |
+| 13 | Display Products — list | ✅ Built |
+| 14 | Display Product — form | ✅ Built |
+| 15 | Pack Templates — library list | ✅ Built |
+| 16 | Display Orders — list | ✅ Built |
+| 17 | Display Order — create (details → ship-to → products) | ✅ Built |
+| 18 | Display Packing — the step loop | ✅ Built |
+| 19 | Template editor — authored in-flow against remaining demand | ✅ Built |
+
+Screens 14 and 17 mirror their Hardgoods counterparts closely; 18 and 19 are new
+shapes. The store picker and product × store matrix from the original mockups are
+gone — a Display order line is `{product, quantity}`, exactly as in Hardgoods.
+
+Screen 18 lists **steps**, not cartons: each row is a template, its count, what
+it consumed and what remained. Remaining demand leads the page, since it is what
+the next template gets authored against; a step's carton count opens the
+drill-down, which reads the paginated `cartons/` endpoint.
+
+Screen 19 is one dialog (`components/display/template-dialog.tsx`) used from both
+the library page and the packing screen. Opened from packing it receives the
+order's remaining quantities, pre-fills a row per leftover product, shows how
+many units of each are left beside the inputs, and reports how many times the
+design would fit — so a template is written against the remainder rather than
+from memory. Its `is_library` tick is what keeps one-off tail templates out of
+the next order's picker.
 
 ### Admin (shared)
 
@@ -566,34 +585,298 @@ Base: `/api/`. DRF `PageNumberPagination`, page size 50.
 `GET /orders/{id}/packing/` returns everything the packing screen needs to render
 itself in a single response.
 
+### Display (§10)
+
+| Endpoint | Methods | Notes |
+|---|---|---|
+| `/display-products/` | CRUD | own catalogue; no box, no parts |
+| `/pack-templates/` | CRUD | items written in the same request; `?is_library=true` for the picker |
+| `/display-orders/` | CRUD | nested `lines`, `shipping_address` — same shape as `/orders/` |
+| `/display-orders/{id}/packing/` | GET | steps, remaining, applicable templates, reconciliation, blockers, warnings, totals |
+| `/display-orders/{id}/cartons/` | GET | the boxes, paginated; `?step=N` for one step's run |
+| `/display-orders/{id}/steps/` | POST | apply a template; `count` defaults to the computed maximum |
+| `/display-orders/{id}/steps/{seq}/` | PATCH, DELETE | re-count or drop a step; replays everything after it and returns `adjustments` |
+| `/display-orders/{id}/advance-status/` | POST | as Hardgoods |
+| `/display-orders/{id}/packing-list/` | GET | **not built** — `.xlsx`, merged per §10.8 |
+
+`POST /steps/` without a `count` applies the maximum — the common case, and the
+one that makes the loop a single click per template.
+
+`GET /packing/` deliberately **excludes** the cartons. The Hardgoods equivalent
+returns everything in one response, which at 1 200 cartons is already a 393 KB
+payload; a Display order runs larger still. The screen works in steps and drills
+into `/cartons/` for one run at a time.
+
+`applicable_templates` carries each library template's current capacity against
+what remains, so the picker can show "TPL-001 · fits 36×" without a round trip
+per template.
+
 **Not yet implemented:** authentication (the API is currently open).
 
 ---
 
 ## 10. The Display module
 
-Deferred, but the schema is shaped to accept it without migration pain.
+Store decor — wreaths, garlands, bows, ornaments. Lives in `apps/display` with
+its own tables. It shares the arithmetic with Hardgoods and nothing else.
 
-Structural differences from Hardgoods:
+### 10.1 Why it is a separate app
+
+Hardgoods packing is **arithmetic**. A product's recipe determines its cartons
+and auto-pack computes them; there is one right answer.
+
+Display packing is a **judgement**, made by a person one box design at a time,
+against whatever the order has left. There is no single right answer, and the
+tail never comes out even.
 
 | | Hardgoods | Display |
 |---|---|---|
-| Destination | one address per order | **many stores** per order |
-| Order line | `{product, qty}` | `{product, store, qty}` — a matrix |
-| Carton contents | one product or part | **several different products** |
-| Packing logic | split by parts / pack-per-box | match a reusable **pack template** |
-| Entry paths | product picker | store picker → matrix, or Excel import |
+| Carton origin | the **product** owns its box | the **template** owns the box |
+| Carton contents | one product, or one part | several different products |
+| Packing logic | split by parts / `pack_per_box` | apply human-authored templates |
+| The plan is | a list of cartons | a list of **steps** that generate cartons |
+| Right answer | computable | chosen, then recorded |
 
-Additional entities required: `Store` (code and/or name, merchant, channel, city,
-country), `Channel` (USA Collection Stores, UK/EU Collection Stores, Wholesale,
-Bulk Presents, USA Movement Stores), `PackTemplate` (name, box L/W/H, remark) and
-`PackTemplateItem` (`{product, qty}`).
+Sharing tables would put a `kind` filter on every query and make each Display
+change a Hardgoods regression risk, in exchange for reusing some columns. The
+two modules share `apps/common` — `calc.py` and the `PackSpec` block — which is
+where drift would actually be dangerous.
 
-Display auto-pack runs per store against matched templates and reports
-**remainders** — units that do not fill a template box and need manual packing.
+Order lines are identical in shape to Hardgoods: `{product, quantity, color}`,
+one address per order. There are no stores and no channels.
 
-D2 (`CartonContent` as a separate table) exists specifically so that Display
-cartons can hold mixed contents on the same schema.
+**Supersedes D2 for Display.** D2 split `CartonContent` off `Carton` partly so
+Display could share the table. Display now has its own. The split remains right
+on its own merits — a Hardgoods carton still needs `part_id` for D3 — but that
+second rationale no longer applies.
+
+### 10.2 The packing loop
+
+The merchant already knows how to pack the goods. The app's job is to record
+that decision and do the counting.
+
+```
+   1. user defines a template     "30 bows + 5 wreaths, in this box"
+   2. app computes how many fit    min over products of ⌊remaining ÷ required⌋
+   3. user accepts or lowers it    28 proposed; 27 if it makes a rounder tail
+   4. cartons materialise, remaining demand drops
+   5. app shows what is left       repeat until nothing remains
+```
+
+The wall in step 2 is exactly:
+
+```
+MAX APPLICATIONS = min over products p in T of  ⌊ remaining[p] ÷ T[p] ⌋
+```
+
+Worked, for an order of 840 bows, 96 ornament sets, 140 wreaths, 158 garlands:
+
+| # | Template | Count | Consumes | Remaining after |
+|---|---|---|---|---|
+| 1 | 30 bows + 5 wreaths | 28 | 840 BOW, 140 WRT | 96 ORN · 158 GRL |
+| 2 | 12 ornament sets + 6 garlands | 8 | 96 ORN, 48 GRL | 110 GRL |
+| 3 | 6 garlands | 18 | 108 GRL | 2 GRL |
+| 4 | 2 garlands *(one-off)* | 1 | 2 GRL | — |
+
+Step 2 is capped by the ornament sets (`⌊96/12⌋ = 8`), not the garlands
+(`⌊158/6⌋ = 26`). Step 1 happens to exhaust both of its products at once.
+
+Two rules keep the loop terminating: every `PackTemplateItem.quantity` is at
+least 1, and a template must consume at least one unit of something still
+remaining. Without the second, a template that fits zero times applies forever.
+
+### 10.3 The plan is a list of steps, not a pile of cartons
+
+`PackStep` is the unit of planning. The four rows above **are** the plan; the
+cartons are their output.
+
+*Rationale:* the loop is greedy, and a greedy choice made early is only revealed
+as wrong several rounds later. The two stranded garlands above are not fixed at
+step 4 but at step 3: a 10-per-box template divides the 110 garlands exactly,
+giving 11 cartons and no tail where 6-per-box gave 18 cartons plus a one-off.
+Eight fewer boxes, found by changing a step already taken. Steps make that edit
+expressible: change one, replay from there.
+
+It also keeps the plan small. A step list stays four rows when the order runs to
+a thousand cartons, so the packing screen renders steps and drills into boxes,
+rather than paginating a carton table nobody reads.
+
+Applying a step materialises real `DisplayCarton` rows, which stay individually
+editable — the box actually used is not always the box planned, and a reweighed
+carton must stick. Re-running a step discards hand edits inside its carton
+range, and says so first. This mirrors Hardgoods auto-pack, which likewise
+replaces rather than merges.
+
+### 10.4 Data model
+
+```
+   DisplayProduct ◀─── PackTemplateItem ───▶ PackTemplate
+          ▲                                       ▲
+          │                                       │
+   DisplayOrderLine ──▶ DisplayOrder ──▶ PackStep ┘
+                              │              │
+                              └──▶ DisplayCarton ──▶ DisplayCartonContent
+```
+
+**DisplayProduct** — `style_no`(unique) · `description` · `category`→ ·
+`customs_description` · `hsn_code` · `status` · `product_weight_kg` ·
+`{length,width,height}_in`
+
+Its own catalogue, not `catalog.Product`. It has **no box of its own** — no
+`PackSpec` block, no `pack_per_box`. Its dimensions are for customs and
+fit-checking only. `masters.Category` and `masters.Merchant` are shared; they
+are master data, not catalogue.
+
+**PackTemplate** — `code`(unique) · `name` · `merchant`→(null = global) ·
+`order`→(nullable) · `remark` · `is_library` · `is_active` ·
+`box_{length,width,height}_in` · `box_weight_kg` · `packing_material_weight_kg`
+
+The box block is declared here rather than inherited from `PackSpec`. `PackSpec`
+carries `product_weight_kg` and derives `net_weight_kg` from it, which is wrong
+for a template: a template's net weight depends on what is actually inside the
+box, and the same box holding 30 bows or 5 weighs differently. Inheriting a
+property that lies is worse than repeating five field declarations.
+
+That the box lives here at all is the inversion in §10.1 made concrete.
+
+`is_library` separates designs worth keeping from tail-fillers, and `order`
+scopes the tail-fillers. Templates are authored in-flow against live remaining
+demand, so a one-off like *"2 garlands"* is normal — it must be usable on the
+order it was written for, and must not silt up the picker on the next one.
+
+The picker therefore offers three things: a global library design, a library
+design for this merchant, or a one-off carrying this order.
+
+```
+Q(is_library=True, merchant__isnull=True)      global library
+| Q(is_library=True, merchant=order.merchant)  this merchant's library
+| Q(order=order)                               written for this order
+```
+
+*Rationale:* an earlier version filtered on `is_library` alone, so unticking the
+box saved a design that then appeared nowhere — indistinguishable from losing
+it. Scope and reusability are two questions, and they need two fields.
+
+**PackTemplateItem** — `template`→ · `product`→ · `quantity` — unique on
+`(template, product)`
+
+**DisplayOrder** — `number`(unique, `DP-{year}-{0000}`) · `name` · `merchant`→ ·
+`buyer_name` · `ship_{country,line1,line2,city,state,postal_code}` · `status`
+
+Same status ladder as Hardgoods. `Order.generate_number` already takes a prefix.
+
+**DisplayOrderLine** — `order`→ · `product`→ · `color` · `quantity` — unique on
+`(order, product)`
+
+**PackStep** — `order`→ · `sequence` · `template`→ · `count` — unique on
+`(order, sequence)`
+
+**DisplayCarton** — `order`→ · `carton_no` · `step`→(nullable) ·
+`{length,width,height}_in` · `box_weight_kg` · `packing_material_weight_kg` ·
+`gross_weight_kg` · `sort_order` — unique on `(order, carton_no)`
+
+`step` is provenance, not constraint: contents may be edited away from what the
+template says, and a `NULL` step means a hand-built carton.
+
+The two packaging weights are **copied from the template** when the carton is
+built rather than read back through `step`. A hand-built carton has no step, and
+would otherwise have no way to account for its own padding.
+
+**DisplayCartonContent** — `carton`→ · `product`→ · `description` · `quantity` ·
+`unit` · `net_weight_kg`
+
+`net_weight_kg` is that product's own weight only — the carton's padding sits on
+the carton, because it belongs to the box rather than to any one thing inside
+it. Splitting it across contents would be arbitrary, and the split would show up
+on a customs line.
+
+No `part` field — Display products have no parts, so D3 does not apply and
+reconciliation is a plain sum.
+
+### 10.5 Weights and volume
+
+Unchanged in spirit from §4; only the source of the box moves.
+
+```
+CONTENT NET  = product_weight_kg × qty                     (per content row)
+
+CARTON NET   = Σ content net  +  carton.packing_material_weight_kg
+CARTON GROSS = CARTON NET     +  carton.box_weight_kg
+CBM          = from the carton's own L × W × H
+```
+
+The sum over several products is the only new shape. It lives in
+`apps/common/calc.py` as `mixed_carton_net_weight` / `mixed_carton_gross_weight`,
+beside the existing per-carton helpers.
+
+A template's weight is **never stored on the template**. The same box holding its
+full 30 bows and holding 5 weigh different amounts, so net is always recomputed
+from actual contents — D1, applied to the new path. `PackTemplate`
+exposes `net_weight_kg` and `gross_weight_kg` as properties describing a *full*
+box, for the template editor only; no carton reads them.
+
+### 10.6 Carton numbering
+
+Continuous across the order: `CTN-001`, `CTN-002`, … assigned in step order, so
+each step owns one unbroken run. That keeps the packing list's ranges plain
+rather than a rule to decode, for the reason given in §7.
+
+**Numbers are never reassigned.** Editing step 4 rebuilds the cartons from step 4
+onward, and they continue from the highest number still standing; everything
+before keeps the number already written on the box. Deleting a middle step
+therefore leaves a gap, which is fine — §7 already prints gapped runs by naming
+each one (`CTN-001 – CTN-003, CTN-007`).
+
+*Rationale:* an earlier draft renumbered on every edit and froze that at
+`packed`. Not renumbering at all is strictly better — a number on a physical
+carton can never move, at any status, and the packing list already handles the
+gaps. Step *sequences* do close up (1, 2, 3), since those are a planning
+artefact nobody writes on a box.
+
+### 10.7 Reconciliation and blockers
+
+Reconciliation is per product: ordered quantity against the sum of that
+product's content quantities. No minimum-across-parts rule.
+
+All five Hardgoods blockers apply unchanged — `missing_carton_no`,
+`duplicate_carton_no`, `missing_dimensions`, `gross_below_net`,
+`quantity_mismatch`. Unpacked remainder needs no new code: it is
+`quantity_mismatch` by another name.
+
+Display adds a **warning** tier — advisory, never blocking:
+
+| Code | Condition |
+|---|---|
+| `template_capacity_exceeded` | contents edited beyond what the step's template holds |
+| `poor_fill` | contents occupy far less than the box; freight spent on air |
+
+*Rationale:* a template encodes something a human physically packed, so the app
+warns on its own arithmetic and never overrules it. Real 3D fit is not solved
+here — volume comparison cannot know how shapes nest.
+
+This adds a `warnings` array beside `blockers` in the packing response, which
+the frontend must read.
+
+### 10.8 Packing list
+
+The §7 document, with one change: cartons merge on their **whole content set**
+rather than on a single content row. §7 says a multi-content carton never
+merges, which under Display would merge nothing and print a row per box.
+
+Every carton from one step is identical by construction, so the sheet comes out
+at roughly **one row per step** — four rows for the worked example above, which
+ships 55 cartons. That
+is the same document a customs officer already reads, and it is why steps are
+the right unit of planning as well as of editing.
+
+### 10.9 Still open
+
+- Photos for display products — the `ProductImage` owner constraint is a CHECK
+  over `product`/`part` and would need a third owner, or its own table.
+- Excel import of the order lines.
+- Whether a template may be edited after an order has used it. The provenance
+  link would then misdescribe boxes already shipped — the same hazard as
+  `is_multi_part`, and it probably wants the same answer.
 
 ---
 
@@ -647,4 +930,15 @@ Vertical slices — database, API and screen for one feature at a time.
 - [x] **8** Packing workspace
 - [x] **9** Packing list document — Excel, per order, colour from the order line
 - [ ] **10** Authentication
-- [ ] **11** Display module
+
+Display (§10), each slice usable before the next starts:
+
+- [x] **11** `apps/display` — `DisplayProduct`, admin, API
+- [x] **12** `PackTemplate` + items — model, admin, API
+- [x] **13** `DisplayOrder` + lines — model, admin, API
+- [x] **14** The step engine — `PackStep`, apply, re-count, delete, replay,
+      reconciliation, blockers, warnings. API only, verified against the §10.2
+      worked example by `seed_display` and by `apps/display/tests.py`.
+- [x] **15** Display product, template and order screens (frontend)
+- [x] **16** Packing screen — the step loop, remaining demand, in-flow templates
+- [ ] **17** Packing list — set-based carton merging (§10.8)

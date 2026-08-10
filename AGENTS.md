@@ -14,7 +14,8 @@ message so the matching frontend change is not forgotten.
 
 ```bash
 docker compose up -d                                # db + api
-docker compose exec backend python manage.py seed_demo
+docker compose exec backend python manage.py seed_demo      # hardgoods sample data
+docker compose exec backend python manage.py seed_display   # display sample data
 docker compose exec backend python manage.py test   # must pass
 docker compose exec backend python manage.py makemigrations
 docker compose exec backend python manage.py createsuperuser
@@ -26,9 +27,11 @@ API http://localhost:8000/api · Admin http://localhost:8000/admin
 
 ```
 apps/common     calc.py (source of truth for the maths), PackSpec abstract model
-apps/masters    BoxType, Category, ProductGroup, Merchant
+apps/masters    Category, Merchant
 apps/catalog    Product, ProductPart, ProductImage
 apps/orders     Order, Carton, CartonContent + services.py (the packing engine)
+apps/display    DisplayProduct, PackTemplate, PackStep, DisplayCarton
+                + services.py (the step engine) — see ARCHITECTURE.md §10
 config          settings, urls
 ```
 
