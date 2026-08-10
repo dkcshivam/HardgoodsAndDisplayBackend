@@ -59,6 +59,26 @@ def carton_gross_weight(
     return total.quantize(WEIGHT_PLACES)
 
 
+def mixed_carton_net_weight(items, packing_material_weight_kg) -> Decimal:
+    """
+    A Display carton holds several different products from one pack template.
+    Each contributes its unit weight times its quantity; packing material is
+    per carton. `items` is (product_weight_kg, quantity) pairs.
+    """
+    total = sum((_d(weight) * quantity for weight, quantity in items), start=ZERO)
+    return (total + _d(packing_material_weight_kg)).quantize(WEIGHT_PLACES)
+
+
+def mixed_carton_gross_weight(
+    items, packing_material_weight_kg, box_weight_kg
+) -> Decimal:
+    total = (
+        mixed_carton_net_weight(items, packing_material_weight_kg)
+        + _d(box_weight_kg)
+    )
+    return total.quantize(WEIGHT_PLACES)
+
+
 def carton_count(quantity: int, pack_per_box: int) -> int:
     if pack_per_box <= 0:
         return 0

@@ -1,0 +1,359 @@
+from django.db import transaction
+from rest_framework import serializers
+
+from .models import (
+    DisplayCarton,
+    DisplayCartonContent,
+    DisplayOrder,
+    DisplayOrderLine,
+    DisplayProduct,
+    PackTemplate,
+    PackTemplateItem,
+)
+
+
+class DisplayProductSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    unit_cbm = serializers.DecimalField(max_digits=12, decimal_places=4, read_only=True)
+
+    class Meta:
+        model = DisplayProduct
+        fields = [
+            "id",
+            "style_no",
+            "description",
+            "category",
+            "category_name",
+            "customs_description",
+            "hsn_code",
+            "status",
+            "product_weight_kg",
+            "length_in",
+            "width_in",
+            "height_in",
+            "unit_cbm",
+            "created_at",
+        ]
+
+
+# ── Templates ────────────────────────────────────────────────────────
+
+
+class PackTemplateItemSerializer(serializers.ModelSerializer):
+    product_style_no = serializers.CharField(source="product.style_no", read_only=True)
+    product_description = serializers.CharField(
+        source="product.description", read_only=True
+    )
+
+    class Meta:
+        model = PackTemplateItem
+        fields = ["id", "product", "product_style_no", "product_description", "quantity"]
+
+
+class PackTemplateSerializer(serializers.ModelSerializer):
+    items = PackTemplateItemSerializer(many=True)
+    merchant_name = serializers.CharField(source="merchant.name", read_only=True)
+    cbm = serializers.DecimalField(max_digits=12, decimal_places=4, read_only=True)
+    net_weight_kg = serializers.DecimalField(
+        max_digits=12, decimal_places=3, read_only=True
+    )
+    gross_weight_kg = serializers.DecimalField(
+        max_digits=12, decimal_places=3, read_only=True
+    )
+    total_units = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = PackTemplate
+        fields = [
+            "id",
+            "code",
+            "name",
+            "merchant",
+            "merchant_name",
+            "remark",
+            "box_length_in",
+            "box_width_in",
+            "box_height_in",
+            "box_weight_kg",
+            "packing_material_weight_kg",
+            "cbm",
+            "net_weight_kg",
+            "gross_weight_kg",
+            "total_units",
+            "is_library",
+            "order",
+            "is_active",
+            "items",
+            "created_at",
+        ]
+
+    def validate_items(self, items):
+        if not items:
+            raise serializers.ValidationError(
+                "A template needs at least one product, or it packs nothing."
+            )
+        seen = {item["product"].id for item in items}
+        if len(seen) != len(items):
+            raise serializers.ValidationError(
+                "The same product is listed twice — combine them into one row."
+            )
+        return items
+
+    @transaction.atomic
+    def create(self, validated_data):
+        items = validated_data.pop("items", [])
+        template = PackTemplate.objects.create(**validated_data)
+        self._write_items(template, items)
+        return template
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        items = validated_data.pop("items", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if items is not None:
+            instance.items.all().delete()
+            self._write_items(instance, items)
+
+        return instance
+
+    @staticmethod
+    def _write_items(template, items):
+        PackTemplateItem.objects.bulk_create(
+            [
+                PackTemplateItem(
+                    template=template,
+                    product=item["product"],
+                    quantity=item["quantity"],
+                )
+                for item in items
+            ]
+        )
+
+
+# ── Orders ───────────────────────────────────────────────────────────
+
+
+class ShippingAddressSerializer(serializers.Serializer):
+    country = serializers.CharField(max_length=2, default="US")
+    line1 = serializers.CharField(max_length=180, allow_blank=True, required=False)
+    line2 = serializers.CharField(max_length=180, allow_blank=True, required=False)
+    city = serializers.CharField(max_length=80, allow_blank=True, required=False)
+    state = serializers.CharField(max_length=80, allow_blank=True, required=False)
+    postal_code = serializers.CharField(max_length=20, allow_blank=True, required=False)
+
+
+class DisplayOrderLineSerializer(serializers.ModelSerializer):
+    product_style_no = serializers.CharField(source="product.style_no", read_only=True)
+    product_description = serializers.CharField(
+        source="product.description", read_only=True
+    )
+
+    class Meta:
+        model = DisplayOrderLine
+        fields = [
+            "id",
+            "product",
+            "product_style_no",
+            "product_description",
+            "color",
+            "quantity",
+        ]
+
+
+class DisplayOrderSerializer(serializers.ModelSerializer):
+    shipping_address = serializers.SerializerMethodField()
+    merchant_name = serializers.CharField(source="merchant.name", read_only=True)
+    lines = DisplayOrderLineSerializer(many=True, required=False)
+    carton_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = DisplayOrder
+        fields = [
+            "id",
+            "number",
+            "name",
+            "merchant",
+            "merchant_name",
+            "buyer_name",
+            "shipping_address",
+            "status",
+            "lines",
+            "carton_count",
+            "created_at",
+        ]
+        read_only_fields = ["number", "status"]
+
+    def get_shipping_address(self, obj) -> dict:
+        return {
+            "country": obj.ship_country,
+            "line1": obj.ship_line1,
+            "line2": obj.ship_line2,
+            "city": obj.ship_city,
+            "state": obj.ship_state,
+            "postal_code": obj.ship_postal_code,
+        }
+
+    def to_internal_value(self, data):
+        address = data.get("shipping_address")
+        validated = super().to_internal_value(data)
+        if isinstance(address, dict):
+            nested = ShippingAddressSerializer(data=address)
+            nested.is_valid(raise_exception=True)
+            for key, value in nested.validated_data.items():
+                validated[f"ship_{key}"] = value
+        return validated
+
+    @transaction.atomic
+    def create(self, validated_data):
+        lines = validated_data.pop("lines", [])
+        order = DisplayOrder.objects.create(**validated_data)
+        self._write_lines(order, lines)
+        return order
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        lines = validated_data.pop("lines", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if lines is not None:
+            instance.lines.all().delete()
+            self._write_lines(instance, lines)
+
+        return instance
+
+    @staticmethod
+    def _write_lines(order, lines):
+        for line in lines:
+            line.pop("id", None)
+            DisplayOrderLine.objects.create(order=order, **line)
+
+
+# ── Cartons ──────────────────────────────────────────────────────────
+
+
+class DisplayCartonContentSerializer(serializers.ModelSerializer):
+    product_style_no = serializers.CharField(source="product.style_no", read_only=True)
+
+    class Meta:
+        model = DisplayCartonContent
+        fields = [
+            "id",
+            "product",
+            "product_style_no",
+            "description",
+            "quantity",
+            "unit",
+            "net_weight_kg",
+        ]
+
+
+class DisplayCartonSerializer(serializers.ModelSerializer):
+    contents = DisplayCartonContentSerializer(many=True)
+    cbm = serializers.DecimalField(max_digits=12, decimal_places=4, read_only=True)
+    net_weight_kg = serializers.DecimalField(
+        max_digits=12, decimal_places=3, read_only=True
+    )
+    template_code = serializers.CharField(
+        source="step.template.code", default=None, read_only=True
+    )
+
+    class Meta:
+        model = DisplayCarton
+        fields = [
+            "id",
+            "carton_no",
+            "step",
+            "template_code",
+            "length_in",
+            "width_in",
+            "height_in",
+            "box_weight_kg",
+            "packing_material_weight_kg",
+            "net_weight_kg",
+            "gross_weight_kg",
+            "cbm",
+            "sort_order",
+            "contents",
+        ]
+
+
+# ── The packing plan ─────────────────────────────────────────────────
+
+
+class QuantityRowSerializer(serializers.Serializer):
+    product = serializers.IntegerField()
+    style_no = serializers.CharField()
+    description = serializers.CharField()
+    quantity = serializers.IntegerField()
+
+
+class StepRowSerializer(serializers.Serializer):
+    sequence = serializers.IntegerField()
+    template = serializers.IntegerField()
+    template_code = serializers.CharField()
+    template_name = serializers.CharField()
+    count = serializers.IntegerField()
+    carton_count = serializers.IntegerField()
+    consumed = QuantityRowSerializer(many=True)
+    remaining_after = QuantityRowSerializer(many=True)
+
+
+class ApplicableTemplateSerializer(serializers.Serializer):
+    template = serializers.IntegerField()
+    code = serializers.CharField()
+    name = serializers.CharField()
+    capacity = serializers.IntegerField()
+    units_per_carton = serializers.IntegerField()
+
+
+class ReconciliationSerializer(serializers.Serializer):
+    product = serializers.IntegerField()
+    style_no = serializers.CharField()
+    ordered = serializers.IntegerField()
+    packed = serializers.IntegerField()
+    is_matched = serializers.BooleanField()
+
+
+class SignalSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    message = serializers.CharField()
+    carton_id = serializers.IntegerField(allow_null=True)
+
+
+class PackingPlanSerializer(serializers.Serializer):
+    order = serializers.IntegerField()
+    steps = StepRowSerializer(many=True)
+    remaining = QuantityRowSerializer(many=True)
+    applicable_templates = ApplicableTemplateSerializer(many=True)
+    reconciliation = ReconciliationSerializer(many=True)
+    blockers = SignalSerializer(many=True)
+    warnings = SignalSerializer(many=True)
+    carton_count = serializers.IntegerField()
+    total_quantity = serializers.IntegerField()
+    total_gross_weight_kg = serializers.DecimalField(max_digits=14, decimal_places=3)
+    total_cbm = serializers.DecimalField(max_digits=14, decimal_places=4)
+    can_save = serializers.BooleanField()
+
+
+class ApplyStepSerializer(serializers.Serializer):
+    template = serializers.PrimaryKeyRelatedField(queryset=PackTemplate.objects.all())
+    # Omit to apply the template as many times as it fits — the common case.
+    count = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+
+
+class RecountStepSerializer(serializers.Serializer):
+    count = serializers.IntegerField(min_value=1)
+
+
+class AdjustmentSerializer(serializers.Serializer):
+    sequence = serializers.IntegerField()
+    template_code = serializers.CharField()
+    was = serializers.IntegerField()
+    now = serializers.IntegerField()

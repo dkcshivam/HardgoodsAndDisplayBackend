@@ -5,6 +5,11 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from apps.catalog.views import ProductImageViewSet, ProductViewSet
+from apps.display.views import (
+    DisplayOrderViewSet,
+    DisplayProductViewSet,
+    PackTemplateViewSet,
+)
 from apps.masters.views import CategoryViewSet, MerchantViewSet
 from apps.orders.views import OrderViewSet
 
@@ -15,6 +20,10 @@ router.register("merchants", MerchantViewSet)
 router.register("products", ProductViewSet)
 router.register("product-images", ProductImageViewSet)
 router.register("orders", OrderViewSet)
+
+router.register("display-products", DisplayProductViewSet)
+router.register("pack-templates", PackTemplateViewSet)
+router.register("display-orders", DisplayOrderViewSet)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
