@@ -632,7 +632,7 @@ tail never comes out even.
 | | Hardgoods | Display |
 |---|---|---|
 | Carton origin | the **product** owns its box | the **template** owns the box |
-| Carton contents | one product, or one part | several different products |
+| Carton contents | one product, or one part | several different pieces |
 | Packing logic | split by parts / `pack_per_box` | apply human-authored templates |
 | The plan is | a list of cartons | a list of **steps** that generate cartons |
 | Right answer | computable | chosen, then recorded |
@@ -666,8 +666,12 @@ that decision and do the counting.
 The wall in step 2 is exactly:
 
 ```
-MAX APPLICATIONS = min over products p in T of  ⌊ remaining[p] ÷ T[p] ⌋
+MAX APPLICATIONS = min over pieces p in T of  ⌊ remaining[p] ÷ T[p] ⌋
 ```
+
+A piece is `(product, part)` — see §10.4.1. For a catalogue with no multi-part
+products this reads exactly as "per product", which is what it was until parts
+arrived.
 
 Worked, for an order of 840 bows, 96 ornament sets, 140 wreaths, 158 garlands:
 
@@ -719,13 +723,46 @@ replaces rather than merges.
 ```
 
 **DisplayProduct** — `style_no`(unique) · `description` · `category`→ ·
-`customs_description` · `hsn_code` · `status` · `product_weight_kg` ·
-`{length,width,height}_in`
+`customs_description` · `hsn_code` · `is_multi_part` · `status` ·
+`product_weight_kg` · `{length,width,height}_in`
 
 Its own catalogue, not `catalog.Product`. It has **no box of its own** — no
 `PackSpec` block, no `pack_per_box`. Its dimensions are for customs and
 fit-checking only. `masters.Category` and `masters.Merchant` are shared; they
 are master data, not catalogue.
+
+**DisplayProductPart** — `product`→ · `name` · `description` ·
+`customs_description` · `hsn_code` · `product_weight_kg` ·
+`{length,width,height}_in` · `sort_order`
+
+A part owns no box either — it goes inside a template's carton exactly as a
+whole product does. It exists because a product's parts need not travel in the
+**same** carton: a tree's branch panels stack flat with each other while its
+post is long and thin, and no box sensibly holds both.
+
+`is_multi_part` selects which half of `DisplayProduct` is meaningful, on the
+same terms as §5: when it is on, the product's own weight and dimensions stay
+empty and each part carries its own, and customs description and HSN move to
+part level. It is **fixed once the product is saved** — every template item,
+step and carton already written against that style number assumed one shape.
+
+### 10.4.1 Pieces
+
+The unit the loop counts is a **piece**: `(product, part)`, where `part` is null
+for a single-piece product. `PackTemplateItem` and `DisplayCartonContent` both
+carry a nullable `part`, and every count in `services.py` is keyed by the pair.
+
+Ordering ten trees is therefore a demand for ten panel sets **and** ten posts,
+each of which must find a box, and they need not find the same one.
+
+*Why a piece and not a product:* a template that says "4 tree panels" must be
+capped by the panels alone. Counting by product would let a box of panels
+consume demand that only the posts can satisfy, and the order would read as
+packed while half of every tree sat on the floor.
+
+`PackTemplateItem` is unique on `(template, product, part)` with
+`nulls_distinct=False` — without that, Postgres treats every whole-product row
+as distinct from every other and the rule never bites.
 
 **PackTemplate** — `code`(unique) · `name` · `merchant`→(null = global) ·
 `order`→(nullable) · `remark` · `is_library` · `is_active` ·
@@ -835,8 +872,11 @@ artefact nobody writes on a box.
 
 ### 10.7 Reconciliation and blockers
 
-Reconciliation is per product: ordered quantity against the sum of that
-product's content quantities. No minimum-across-parts rule.
+Reconciliation is per order line. A single-piece product is a plain sum of its
+content quantities. A multi-part product counts each part separately and takes
+the **minimum**, exactly as D3 does for Hardgoods: twenty panel sets and
+eighteen posts is eighteen trees, not nineteen. That is both true and
+actionable — go and find two posts.
 
 All five Hardgoods blockers apply unchanged — `missing_carton_no`,
 `duplicate_carton_no`, `missing_dimensions`, `gross_below_net`,
