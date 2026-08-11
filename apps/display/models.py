@@ -261,6 +261,15 @@ class PackTemplateItem(models.Model):
     product = models.ForeignKey(
         DisplayProduct, on_delete=models.PROTECT, related_name="template_items"
     )
+    # Set when the product packs as parts. Two parts of one product can sit in
+    # different templates, which is the whole reason this column exists.
+    part = models.ForeignKey(
+        DisplayProductPart,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="template_items",
+    )
     # At least one, or a template could consume nothing and apply forever.
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
 
@@ -268,8 +277,12 @@ class PackTemplateItem(models.Model):
         ordering = ["id"]
         verbose_name = "item"
         constraints = [
+            # nulls_distinct=False, or Postgres would treat every whole-product
+            # row as unique from every other and the rule would not bite.
             models.UniqueConstraint(
-                fields=["template", "product"], name="one_row_per_product_per_template"
+                fields=["template", "product", "part"],
+                name="one_row_per_piece_per_template",
+                nulls_distinct=False,
             ),
             models.CheckConstraint(
                 condition=models.Q(quantity__gte=1), name="template_item_quantity_positive"
@@ -277,7 +290,18 @@ class PackTemplateItem(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.product.style_no} × {self.quantity}"
+        return f"{self.piece_label} × {self.quantity}"
+
+    @property
+    def piece(self):
+        """What this row puts in the box: a part, or the whole product."""
+        return self.part or self.product
+
+    @property
+    def piece_label(self) -> str:
+        if self.part_id:
+            return f"{self.product.style_no} — {self.part.name}"
+        return self.product.style_no
 
 
 class DisplayOrderStatus(models.TextChoices):
@@ -506,6 +530,15 @@ class DisplayCartonContent(models.Model):
     product = models.ForeignKey(
         DisplayProduct, on_delete=models.PROTECT, related_name="carton_contents"
     )
+    # Which part of it, when the product packs as parts. Recorded so the
+    # remainder can tell "twenty tops boxed" from "twenty legs still loose".
+    part = models.ForeignKey(
+        DisplayProductPart,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="carton_contents",
+    )
 
     description = models.CharField(max_length=255, blank=True)
     quantity = models.PositiveIntegerField(default=1)
@@ -523,4 +556,15 @@ class DisplayCartonContent(models.Model):
         ordering = ["id"]
 
     def __str__(self):
-        return f"{self.product.style_no} × {self.quantity}"
+        return f"{self.piece_label} × {self.quantity}"
+
+    @property
+    def piece(self):
+        """What is in the box: a part, or the whole product."""
+        return self.part or self.product
+
+    @property
+    def piece_label(self) -> str:
+        if self.part_id:
+            return f"{self.product.style_no} — {self.part.name}"
+        return self.product.style_no

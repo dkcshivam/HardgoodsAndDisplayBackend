@@ -34,22 +34,44 @@ class PackingError(Exception):
 
 # ── Demand ───────────────────────────────────────────────────────────
 
+#: What the loop counts: a whole product, or one part of one.
+Piece = tuple[int, int | None]
+
+
+def _lines(order: DisplayOrder):
+    return order.lines.select_related("product").prefetch_related("product__parts")
+
 
 def ordered_quantities(order: DisplayOrder) -> Counter:
-    return Counter({line.product_id: line.quantity for line in order.lines.all()})
+    """
+    Demand, counted in pieces.
+
+    A multi-part product is ordered whole but packed part by part, so ten
+    tables is a demand for ten tops *and* ten legs — each has to find a box,
+    and they need not find the same one.
+    """
+    demand: Counter = Counter()
+    for line in _lines(order):
+        product = line.product
+        if product.is_multi_part:
+            for part in product.parts.all():
+                demand[(product.id, part.id)] += line.quantity
+        else:
+            demand[(product.id, None)] += line.quantity
+    return demand
 
 
 def packed_quantities(order: DisplayOrder) -> Counter:
     packed: Counter = Counter()
     rows = DisplayCartonContent.objects.filter(carton__order=order).values_list(
-        "product_id", "quantity"
+        "product_id", "part_id", "quantity"
     )
-    for product_id, quantity in rows:
-        packed[product_id] += quantity
+    for product_id, part_id, quantity in rows:
+        packed[(product_id, part_id)] += quantity
     return packed
 
 
-def remaining_quantities(order: DisplayOrder) -> dict[int, int]:
+def remaining_quantities(order: DisplayOrder) -> dict[Piece, int]:
     """
     What still needs a box.
 
@@ -58,17 +80,17 @@ def remaining_quantities(order: DisplayOrder) -> dict[int, int]:
     """
     packed = packed_quantities(order)
     remaining = {}
-    for product_id, quantity in ordered_quantities(order).items():
-        short = quantity - packed.get(product_id, 0)
+    for piece, quantity in ordered_quantities(order).items():
+        short = quantity - packed.get(piece, 0)
         if short > 0:
-            remaining[product_id] = short
+            remaining[piece] = short
     return remaining
 
 
-def max_applications(template: PackTemplate, remaining: dict[int, int]) -> int:
+def max_applications(template: PackTemplate, remaining: dict[Piece, int]) -> int:
     """
     How many times this template fits what is left: the smallest whole number
-    of boxes any one of its products allows.
+    of boxes any one of its pieces allows.
 
     12 ornament sets + 6 garlands against 96 and 158 gives
     min(96//12, 158//6) = min(8, 26) = 8 — capped by the ornaments.
@@ -76,7 +98,10 @@ def max_applications(template: PackTemplate, remaining: dict[int, int]) -> int:
     items = list(template.items.all())
     if not items:
         return 0
-    return min(remaining.get(item.product_id, 0) // item.quantity for item in items)
+    return min(
+        remaining.get((item.product_id, item.part_id), 0) // item.quantity
+        for item in items
+    )
 
 
 # ── Applying a step ──────────────────────────────────────────────────
@@ -118,9 +143,9 @@ def _build_cartons(step: PackStep) -> None:
     """Materialise this step's boxes, numbering on from the order's highest."""
     order = step.order
     template = step.template
-    items = list(template.items.select_related("product"))
+    items = list(template.items.select_related("product", "part"))
 
-    weights = [(item.product.product_weight_kg, item.quantity) for item in items]
+    weights = [(item.piece.product_weight_kg, item.quantity) for item in items]
     gross = calc.mixed_carton_gross_weight(
         weights, template.packing_material_weight_kg, template.box_weight_kg
     )
@@ -148,11 +173,12 @@ def _build_cartons(step: PackStep) -> None:
         DisplayCartonContent(
             carton=carton,
             product=item.product,
-            description=item.product.description,
+            part=item.part,
+            description=_describe(item),
             quantity=item.quantity,
             unit=CartonUnit.PIECES,
             net_weight_kg=calc.mixed_carton_net_weight(
-                [(item.product.product_weight_kg, item.quantity)], None
+                [(item.piece.product_weight_kg, item.quantity)], None
             ),
         )
         for carton in cartons
@@ -275,20 +301,21 @@ def step_rows(order: DisplayOrder) -> list[StepRow]:
     left afterwards. This is the derivation, and it is why a packer will trust
     the number 36 rather than redo it by hand.
     """
-    products = _product_index(order)
+    pieces = _piece_index(order)
     running = dict(ordered_quantities(order))
     rows: list[StepRow] = []
 
     steps = order.steps.select_related("template").prefetch_related(
-        "template__items__product"
+        "template__items__product", "template__items__part"
     )
 
     for step in steps:
         consumed = []
         for item in step.template.items.all():
+            piece = (item.product_id, item.part_id)
             used = item.quantity * step.count
-            running[item.product_id] = running.get(item.product_id, 0) - used
-            consumed.append(_quantity_row(item.product_id, used, products))
+            running[piece] = running.get(piece, 0) - used
+            consumed.append(_quantity_row(piece, used, pieces))
 
         rows.append(
             StepRow(
@@ -300,8 +327,8 @@ def step_rows(order: DisplayOrder) -> list[StepRow]:
                 carton_count=step.count,
                 consumed=consumed,
                 remaining_after=[
-                    _quantity_row(pid, qty, products)
-                    for pid, qty in running.items()
+                    _quantity_row(piece, qty, pieces)
+                    for piece, qty in running.items()
                     if qty > 0
                 ],
             )
@@ -311,25 +338,49 @@ def step_rows(order: DisplayOrder) -> list[StepRow]:
 
 
 def remaining_rows(order: DisplayOrder) -> list[dict]:
-    products = _product_index(order)
+    pieces = _piece_index(order)
     return [
-        _quantity_row(pid, qty, products)
-        for pid, qty in remaining_quantities(order).items()
+        _quantity_row(piece, qty, pieces)
+        for piece, qty in remaining_quantities(order).items()
     ]
 
 
-def _product_index(order: DisplayOrder) -> dict:
-    return {line.product_id: line.product for line in order.lines.select_related("product")}
+def _piece_index(order: DisplayOrder) -> dict[Piece, tuple]:
+    """Every piece this order asks for, so a row can name what it counts."""
+    index: dict[Piece, tuple] = {}
+    for line in _lines(order):
+        product = line.product
+        if product.is_multi_part:
+            for part in product.parts.all():
+                index[(product.id, part.id)] = (product, part)
+        else:
+            index[(product.id, None)] = (product, None)
+    return index
 
 
-def _quantity_row(product_id: int, quantity: int, products: dict) -> dict:
-    product = products.get(product_id)
+def _quantity_row(piece: Piece, quantity: int, pieces: dict) -> dict:
+    product_id, part_id = piece
+    product, part = pieces.get(piece, (None, None))
     return {
         "product": product_id,
+        "part": part_id,
         "style_no": product.style_no if product else "",
-        "description": product.description if product else "",
+        "part_name": part.name if part else "",
+        "description": _piece_description(product, part),
         "quantity": quantity,
     }
+
+
+def _piece_description(product, part) -> str:
+    if product is None:
+        return ""
+    if part is None:
+        return product.description
+    return f"{product.description} — {part.name}"
+
+
+def _describe(item) -> str:
+    return _piece_description(item.product, item.part)
 
 
 # ── Which templates are worth offering ───────────────────────────────
@@ -392,20 +443,38 @@ class ReconciliationRow:
 
 def reconcile(order: DisplayOrder) -> list[ReconciliationRow]:
     """
-    Ordered against actually boxed. No minimum-across-parts rule here —
-    display products have no parts, so it is a plain sum.
+    Ordered against actually boxed.
+
+    A multi-part product counts as packed only once every part has a box, so
+    each part is counted on its own and the lowest wins: twenty tops and
+    eighteen legs is eighteen tables, not nineteen. That is both true and
+    actionable — go and find two legs.
     """
     packed = packed_quantities(order)
-    return [
-        ReconciliationRow(
-            product=line.product_id,
-            style_no=line.product.style_no,
-            ordered=line.quantity,
-            packed=packed.get(line.product_id, 0),
-            is_matched=packed.get(line.product_id, 0) == line.quantity,
+    rows = []
+
+    for line in _lines(order):
+        product = line.product
+
+        if product.is_multi_part:
+            counts = [
+                packed.get((product.id, part.id), 0) for part in product.parts.all()
+            ]
+            boxed = min(counts, default=0)
+        else:
+            boxed = packed.get((product.id, None), 0)
+
+        rows.append(
+            ReconciliationRow(
+                product=product.id,
+                style_no=product.style_no,
+                ordered=line.quantity,
+                packed=boxed,
+                is_matched=boxed == line.quantity,
+            )
         )
-        for line in order.lines.select_related("product")
-    ]
+
+    return rows
 
 
 # ── Blockers and warnings ────────────────────────────────────────────
@@ -510,7 +579,7 @@ def find_warnings(order: DisplayOrder) -> list[Warning_]:
     warnings: list[Warning_] = []
 
     cartons = order.cartons.select_related("step__template").prefetch_related(
-        "contents__product", "step__template__items"
+        "contents__product", "contents__part", "step__template__items"
     )
 
     for carton in cartons:
@@ -518,17 +587,17 @@ def find_warnings(order: DisplayOrder) -> list[Warning_]:
 
         if carton.step_id:
             allowed = {
-                item.product_id: item.quantity
+                (item.product_id, item.part_id): item.quantity
                 for item in carton.step.template.items.all()
             }
             for content in carton.contents.all():
-                permitted = allowed.get(content.product_id, 0)
+                permitted = allowed.get((content.product_id, content.part_id), 0)
                 if content.quantity > permitted:
                     warnings.append(
                         Warning_(
                             "template_capacity_exceeded",
                             f"Carton {label} holds {content.quantity} × "
-                            f"{content.product.style_no}, more than the "
+                            f"{content.piece_label}, more than the "
                             f"{carton.step.template.code} template's {permitted}",
                             carton.id,
                         )
@@ -538,7 +607,7 @@ def find_warnings(order: DisplayOrder) -> list[Warning_]:
         if not box:
             continue
         occupied = sum(
-            (content.product.unit_cbm * content.quantity for content in carton.contents.all()),
+            (content.piece.unit_cbm * content.quantity for content in carton.contents.all()),
             start=Decimal("0"),
         )
         if occupied and occupied / box < FILL_WARNING_RATIO:

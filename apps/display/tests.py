@@ -1,3 +1,4 @@
+from collections import Counter
 from decimal import Decimal
 
 from django.test import TestCase
@@ -7,6 +8,8 @@ from apps.masters.models import Merchant
 
 from . import services
 from .models import (
+    DisplayCarton,
+    DisplayCartonContent,
     DisplayOrder,
     DisplayOrderLine,
     DisplayProduct,
@@ -104,7 +107,7 @@ class DisplayPackingTests(TestCase):
             step = services.apply_step(self.order, tpl)
             self.assertEqual(step.count, count, f"{tpl.code} applied {step.count}")
 
-        self.assertEqual(services.remaining_quantities(self.order), {self.grl.id: 2})
+        self.assertEqual(services.remaining_quantities(self.order), {(self.grl.id, None): 2})
 
         tail = template("TPL-TAIL", [(self.grl, 2)], box=(20, 14, 12))
         services.apply_step(self.order, tail)
@@ -189,9 +192,9 @@ class DisplayPackingTests(TestCase):
 
     def test_deleting_a_step_returns_its_units_to_the_remainder(self):
         services.apply_step(self.order, self.t2, count=8)
-        before = services.remaining_quantities(self.order)[self.grl.id]
+        before = services.remaining_quantities(self.order)[(self.grl.id, None)]
         services.delete_step(self.order, 1)
-        after = services.remaining_quantities(self.order)[self.grl.id]
+        after = services.remaining_quantities(self.order)[(self.grl.id, None)]
         self.assertEqual(after - before, 48)
 
     # ── Reconciliation, blockers, warnings ───────────────────────────
@@ -276,14 +279,14 @@ class DisplayPackingTests(TestCase):
 
     def test_a_hand_edited_carton_moves_the_remainder(self):
         services.apply_step(self.order, self.t1, count=1)
-        before = services.remaining_quantities(self.order)[self.bow.id]
+        before = services.remaining_quantities(self.order)[(self.bow.id, None)]
 
         carton = self.order.cartons.get()
         content = carton.contents.get(product=self.bow)
         content.quantity += 5
         content.save()
 
-        after = services.remaining_quantities(self.order)[self.bow.id]
+        after = services.remaining_quantities(self.order)[(self.bow.id, None)]
         self.assertEqual(before - after, 5)
 
 
@@ -393,3 +396,82 @@ class DisplayProductShapeTests(APITestCase):
         )
 
         self.assertEqual(DisplayProductPart.objects.filter(pk=ids[1]).count(), 0)
+
+
+class PieceCountingTests(TestCase):
+    """
+    Demand is counted in pieces. A multi-part product is ordered whole but
+    packed part by part, and its parts need not share a carton.
+    """
+
+    def setUp(self):
+        merchant = Merchant.objects.create(code="UO", name="Urban Outfitters")
+
+        self.table = DisplayProduct.objects.create(
+            style_no="DSP-TBL-01", description="Display Table", is_multi_part=True
+        )
+        self.top = DisplayProductPart.objects.create(
+            product=self.table, name="Top", product_weight_kg=Decimal("3.2"), sort_order=0
+        )
+        self.legs = DisplayProductPart.objects.create(
+            product=self.table, name="Legs", product_weight_kg=Decimal("2.1"), sort_order=1
+        )
+
+        self.order = DisplayOrder.objects.create(name="Test", merchant=merchant)
+        DisplayOrderLine.objects.create(order=self.order, product=self.table, quantity=10)
+
+    def box(self, part, quantity):
+        """Put some of one part in a carton of its own."""
+        carton = DisplayCarton.objects.create(
+            order=self.order,
+            carton_no=f"CTN-{self.order.cartons.count() + 1:03d}",
+            length_in=Decimal("40"),
+            width_in=Decimal("20"),
+            height_in=Decimal("6"),
+            gross_weight_kg=Decimal("5"),
+        )
+        DisplayCartonContent.objects.create(
+            carton=carton, product=self.table, part=part, quantity=quantity
+        )
+
+    def test_ordering_a_multi_part_product_asks_for_every_part(self):
+        self.assertEqual(
+            services.ordered_quantities(self.order),
+            Counter(
+                {
+                    (self.table.id, self.top.id): 10,
+                    (self.table.id, self.legs.id): 10,
+                }
+            ),
+        )
+
+    def test_parts_are_counted_apart_so_the_remainder_names_the_short_one(self):
+        self.box(self.top, 10)
+        self.box(self.legs, 8)
+
+        remaining = services.remaining_quantities(self.order)
+
+        self.assertEqual(remaining, {(self.table.id, self.legs.id): 2})
+        self.assertEqual(
+            [row["description"] for row in services.remaining_rows(self.order)],
+            ["Display Table — Legs"],
+        )
+
+    def test_a_product_is_packed_only_once_its_weakest_part_is(self):
+        """Ten tops and eight legs is eight tables, not nine."""
+        self.box(self.top, 10)
+        self.box(self.legs, 8)
+
+        row = services.reconcile(self.order)[0]
+
+        self.assertEqual(row.packed, 8)
+        self.assertFalse(row.is_matched)
+
+    def test_every_part_boxed_matches_the_order(self):
+        self.box(self.top, 10)
+        self.box(self.legs, 10)
+
+        row = services.reconcile(self.order)[0]
+
+        self.assertEqual(row.packed, 10)
+        self.assertTrue(row.is_matched)

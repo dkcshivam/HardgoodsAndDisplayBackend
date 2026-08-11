@@ -355,6 +355,7 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
 
 class DisplayCartonContentSerializer(serializers.ModelSerializer):
     product_style_no = serializers.CharField(source="product.style_no", read_only=True)
+    part_name = serializers.CharField(source="part.name", default="", read_only=True)
 
     class Meta:
         model = DisplayCartonContent
@@ -362,6 +363,8 @@ class DisplayCartonContentSerializer(serializers.ModelSerializer):
             "id",
             "product",
             "product_style_no",
+            "part",
+            "part_name",
             "description",
             "quantity",
             "unit",
@@ -404,7 +407,9 @@ class DisplayCartonSerializer(serializers.ModelSerializer):
 
 class QuantityRowSerializer(serializers.Serializer):
     product = serializers.IntegerField()
+    part = serializers.IntegerField(allow_null=True)
     style_no = serializers.CharField()
+    part_name = serializers.CharField(allow_blank=True)
     description = serializers.CharField()
     quantity = serializers.IntegerField()
 
