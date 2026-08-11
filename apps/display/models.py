@@ -241,17 +241,21 @@ class PackTemplate(TimeStampedModel):
     def net_weight_kg(self):
         """A full box of this template. Never stored — a part-filled one differs."""
         return calc.mixed_carton_net_weight(
-            [(item.product.product_weight_kg, item.quantity) for item in self.items.all()],
-            self.packing_material_weight_kg,
+            self._piece_weights(), self.packing_material_weight_kg
         )
 
     @property
     def gross_weight_kg(self):
         return calc.mixed_carton_gross_weight(
-            [(item.product.product_weight_kg, item.quantity) for item in self.items.all()],
+            self._piece_weights(),
             self.packing_material_weight_kg,
             self.box_weight_kg,
         )
+
+    def _piece_weights(self):
+        # From the piece, not the product: a multi-part product has no weight
+        # of its own — each of its parts carries one.
+        return [(item.piece.product_weight_kg, item.quantity) for item in self.items.all()]
 
 
 class PackTemplateItem(models.Model):

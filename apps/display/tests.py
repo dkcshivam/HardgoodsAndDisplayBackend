@@ -475,3 +475,129 @@ class PieceCountingTests(TestCase):
 
         self.assertEqual(row.packed, 10)
         self.assertTrue(row.is_matched)
+
+
+class TemplateItemPieceTests(APITestCase):
+    """
+    A template item names a piece. Two parts of one product may sit in two
+    different templates, which is the reason the column exists.
+    """
+
+    URL = "/api/pack-templates/"
+
+    def setUp(self):
+        self.bow = DisplayProduct.objects.create(
+            style_no="DSP-BOW-01", description="Velvet Bow",
+            product_weight_kg=Decimal("0.1"),
+        )
+        self.table = DisplayProduct.objects.create(
+            style_no="DSP-TBL-01", description="Display Table", is_multi_part=True
+        )
+        self.top = DisplayProductPart.objects.create(
+            product=self.table, name="Top", product_weight_kg=Decimal("3.2"), sort_order=0
+        )
+        self.legs = DisplayProductPart.objects.create(
+            product=self.table, name="Legs", product_weight_kg=Decimal("2.1"), sort_order=1
+        )
+        self.other = DisplayProductPart.objects.create(
+            product=DisplayProduct.objects.create(
+                style_no="DSP-OTH-01", description="Other", is_multi_part=True
+            ),
+            name="Stray",
+        )
+
+    def post(self, items, code="TPL-001"):
+        return self.client.post(
+            self.URL,
+            {
+                "code": code,
+                "name": code,
+                "box_length_in": "40",
+                "box_width_in": "20",
+                "box_height_in": "6",
+                "box_weight_kg": "0.8",
+                "packing_material_weight_kg": "0.25",
+                "is_library": True,
+                "items": items,
+            },
+            format="json",
+        )
+
+    def test_a_part_can_share_a_box_with_a_whole_product(self):
+        response = self.post(
+            [
+                {"product": self.table.id, "part": self.top.id, "quantity": 1},
+                {"product": self.bow.id, "quantity": 10},
+            ]
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(
+            [item["part_name"] for item in response.data["items"]], ["Top", ""]
+        )
+
+    def test_two_parts_of_one_product_can_go_to_different_templates(self):
+        first = self.post(
+            [{"product": self.table.id, "part": self.top.id, "quantity": 1}], "TPL-TOP"
+        )
+        second = self.post(
+            [{"product": self.table.id, "part": self.legs.id, "quantity": 1}], "TPL-LEG"
+        )
+
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(second.status_code, 201, second.data)
+
+    def test_a_multi_part_product_must_say_which_part(self):
+        response = self.post([{"product": self.table.id, "quantity": 1}])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("part", str(response.data))
+
+    def test_a_single_piece_product_takes_no_part(self):
+        response = self.post(
+            [{"product": self.bow.id, "part": self.top.id, "quantity": 1}]
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("part", str(response.data))
+
+    def test_a_part_of_another_product_is_refused(self):
+        response = self.post(
+            [{"product": self.table.id, "part": self.other.id, "quantity": 1}]
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("part", str(response.data))
+
+    def test_the_same_piece_twice_is_refused(self):
+        response = self.post(
+            [
+                {"product": self.table.id, "part": self.top.id, "quantity": 1},
+                {"product": self.table.id, "part": self.top.id, "quantity": 2},
+            ]
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_both_parts_of_one_product_may_share_a_box(self):
+        response = self.post(
+            [
+                {"product": self.table.id, "part": self.top.id, "quantity": 1},
+                {"product": self.table.id, "part": self.legs.id, "quantity": 1},
+            ]
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+
+    def test_template_weights_come_from_the_parts(self):
+        """Not from the product, which on a multi-part SKU has no weight."""
+        response = self.post(
+            [
+                {"product": self.table.id, "part": self.top.id, "quantity": 1},
+                {"product": self.table.id, "part": self.legs.id, "quantity": 1},
+            ]
+        )
+
+        # 3.2 + 2.1 contents, + 0.25 padding, + 0.8 box
+        self.assertEqual(Decimal(str(response.data["net_weight_kg"])), Decimal("5.550"))
+        self.assertEqual(Decimal(str(response.data["gross_weight_kg"])), Decimal("6.350"))

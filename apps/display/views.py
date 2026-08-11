@@ -34,7 +34,7 @@ class DisplayProductViewSet(viewsets.ModelViewSet):
 
 class PackTemplateViewSet(viewsets.ModelViewSet):
     queryset = PackTemplate.objects.select_related("merchant").prefetch_related(
-        "items__product"
+        "items__product", "items__part"
     )
     serializer_class = PackTemplateSerializer
     filterset_fields = ["is_library", "is_active", "merchant"]
@@ -69,7 +69,7 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
         """The boxes themselves, paginated — the drill-down from a step."""
         order = self.get_object()
         queryset = order.cartons.select_related("step__template").prefetch_related(
-            "contents__product"
+            "contents__product", "contents__part"
         )
         if (sequence := request.query_params.get("step")) is not None:
             queryset = queryset.filter(step__sequence=sequence)

@@ -78,6 +78,7 @@ class DisplayProductAdmin(admin.ModelAdmin):
 class PackTemplateItemInline(admin.TabularInline):
     model = PackTemplateItem
     extra = 1
+    fields = ("product", "part", "quantity")
     autocomplete_fields = ("product",)
 
 
@@ -157,6 +158,7 @@ class DisplayOrderAdmin(admin.ModelAdmin):
 class DisplayCartonContentInline(admin.TabularInline):
     model = DisplayCartonContent
     extra = 0
+    fields = ("product", "part", "description", "quantity", "unit", "net_weight_kg")
     autocomplete_fields = ("product",)
 
 

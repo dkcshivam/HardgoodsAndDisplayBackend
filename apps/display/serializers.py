@@ -159,10 +159,44 @@ class PackTemplateItemSerializer(serializers.ModelSerializer):
     product_description = serializers.CharField(
         source="product.description", read_only=True
     )
+    part_name = serializers.CharField(source="part.name", default="", read_only=True)
 
     class Meta:
         model = PackTemplateItem
-        fields = ["id", "product", "product_style_no", "product_description", "quantity"]
+        fields = [
+            "id",
+            "product",
+            "product_style_no",
+            "product_description",
+            "part",
+            "part_name",
+            "quantity",
+        ]
+
+    def validate(self, attrs):
+        product = attrs.get("product")
+        part = attrs.get("part")
+
+        if product is None:
+            return attrs
+
+        if product.is_multi_part and part is None:
+            raise serializers.ValidationError(
+                {
+                    "part": f"{product.style_no} packs as parts — say which part "
+                    "goes in this box."
+                }
+            )
+        if not product.is_multi_part and part is not None:
+            raise serializers.ValidationError(
+                {"part": f"{product.style_no} is a single piece and has no parts."}
+            )
+        if part is not None and part.product_id != product.id:
+            raise serializers.ValidationError(
+                {"part": "That part belongs to a different product."}
+            )
+
+        return attrs
 
 
 class PackTemplateSerializer(serializers.ModelSerializer):
@@ -205,12 +239,17 @@ class PackTemplateSerializer(serializers.ModelSerializer):
     def validate_items(self, items):
         if not items:
             raise serializers.ValidationError(
-                "A template needs at least one product, or it packs nothing."
+                "A template needs at least one piece, or it packs nothing."
             )
-        seen = {item["product"].id for item in items}
+        # Keyed by piece: a product's two parts are two different things to
+        # pack, and may legitimately both appear.
+        seen = {
+            (item["product"].id, item.get("part").id if item.get("part") else None)
+            for item in items
+        }
         if len(seen) != len(items):
             raise serializers.ValidationError(
-                "The same product is listed twice — combine them into one row."
+                "The same piece is listed twice — combine them into one row."
             )
         return items
 
@@ -242,6 +281,7 @@ class PackTemplateSerializer(serializers.ModelSerializer):
                 PackTemplateItem(
                     template=template,
                     product=item["product"],
+                    part=item.get("part"),
                     quantity=item["quantity"],
                 )
                 for item in items
