@@ -9,6 +9,7 @@ The plan is the list of steps. Cartons are what they produce.
 
 from datetime import date
 
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Max
@@ -44,6 +45,12 @@ class DisplayProduct(TimeStampedModel):
     customs_description = models.CharField(max_length=255, blank=True)
     hsn_code = models.CharField(max_length=20, blank=True)
 
+    # Fixed at creation: every template item, step and carton already written
+    # against this SKU assumed one shape or the other.
+    is_multi_part = models.BooleanField(
+        default=False,
+        help_text="On = packs as separate parts, which may go in different templates.",
+    )
     status = models.CharField(
         max_length=10,
         choices=DisplayProductStatus.choices,
@@ -75,9 +82,78 @@ class DisplayProduct(TimeStampedModel):
     def __str__(self):
         return f"{self.style_no} · {self.description}"
 
+    #: Fields a multi-part product leaves empty — its parts carry them instead.
+    OWN_FIGURE_FIELDS = ("product_weight_kg", "length_in", "width_in", "height_in")
+
+    def clean(self):
+        if not self.is_multi_part:
+            return
+        filled = [f for f in self.OWN_FIGURE_FIELDS if getattr(self, f) is not None]
+        if filled:
+            raise ValidationError(
+                {
+                    filled[0]: "A multi-part product is never handled whole — "
+                    "each part carries its own weight and size."
+                }
+            )
+
     @property
     def unit_cbm(self):
         """One item's own volume — used to warn when a box is mostly air."""
+        return calc.cbm(self.length_in, self.width_in, self.height_in)
+
+
+class DisplayProductPart(models.Model):
+    """
+    One separately-packed component of a display product.
+
+    Like the product it belongs to, a part owns no box: it goes inside a
+    template's carton. The reason it exists is that a product's parts need
+    not travel in the *same* carton — a wreath frame packs flat with other
+    frames while its trim goes in a different template altogether.
+    """
+
+    product = models.ForeignKey(
+        DisplayProduct, on_delete=models.CASCADE, related_name="parts"
+    )
+
+    name = models.CharField(max_length=120, help_text="e.g. Wreath frame")
+    description = models.CharField(max_length=255, blank=True)
+
+    # Held per part: parts of different materials classify differently.
+    customs_description = models.CharField(max_length=255, blank=True)
+    hsn_code = models.CharField(max_length=20, blank=True)
+
+    product_weight_kg = models.DecimalField(
+        "part weight (kg)",
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="The bare part with no packaging.",
+    )
+
+    length_in = models.DecimalField(
+        "part length (in)", max_digits=8, decimal_places=2, null=True, blank=True
+    )
+    width_in = models.DecimalField(
+        "part width (in)", max_digits=8, decimal_places=2, null=True, blank=True
+    )
+    height_in = models.DecimalField(
+        "part height (in)", max_digits=8, decimal_places=2, null=True, blank=True
+    )
+
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["product", "sort_order", "id"]
+        verbose_name = "part"
+
+    def __str__(self):
+        return f"{self.product.style_no} — {self.name}"
+
+    @property
+    def unit_cbm(self):
         return calc.cbm(self.length_in, self.width_in, self.height_in)
 
 

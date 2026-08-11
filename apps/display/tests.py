@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.test import TestCase
+from rest_framework.test import APITestCase
 
 from apps.masters.models import Merchant
 
@@ -9,6 +10,7 @@ from .models import (
     DisplayOrder,
     DisplayOrderLine,
     DisplayProduct,
+    DisplayProductPart,
     PackTemplate,
     PackTemplateItem,
 )
@@ -293,3 +295,101 @@ class DisplayOrderNumberTests(TestCase):
 
         self.assertTrue(first.number.startswith("DP-"))
         self.assertEqual(int(second.number[-4:]) - int(first.number[-4:]), 1)
+
+
+class DisplayProductShapeTests(APITestCase):
+    """A display product is either one piece or several parts, fixed at birth."""
+
+    URL = "/api/display-products/"
+
+    def payload(self, **overrides):
+        body = {
+            "style_no": "DSP-WRT-24",
+            "description": '24" Pine Wreath',
+            "is_multi_part": True,
+            "parts": [
+                {"name": "Frame", "product_weight_kg": "0.400", "sort_order": 0},
+                {"name": "Trim", "product_weight_kg": "0.150", "sort_order": 1},
+            ],
+        }
+        body.update(overrides)
+        return body
+
+    def test_a_multi_part_product_saves_its_parts(self):
+        response = self.client.post(self.URL, self.payload(), format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual([part["name"] for part in response.data["parts"]],
+                         ["Frame", "Trim"])
+
+    def test_a_multi_part_product_carries_no_figures_of_its_own(self):
+        """Its parts are what get weighed and boxed; the whole never is."""
+        response = self.client.post(
+            self.URL, self.payload(product_weight_kg="0.550"), format="json"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("product_weight_kg", response.data)
+
+    def test_a_single_piece_product_cannot_have_parts(self):
+        response = self.client.post(
+            self.URL, self.payload(is_multi_part=False), format="json"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("parts", response.data)
+
+    def test_two_parts_are_the_minimum(self):
+        body = self.payload()
+        body["parts"] = body["parts"][:1]
+        response = self.client.post(self.URL, body, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("parts", response.data)
+
+    def test_shape_cannot_change_after_creation(self):
+        created = self.client.post(self.URL, self.payload(), format="json").data
+
+        response = self.client.patch(
+            f"{self.URL}{created['id']}/", {"is_multi_part": False}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("is_multi_part", response.data)
+
+    def test_editing_parts_keeps_their_rows(self):
+        """A recreated part would orphan every template item aimed at it."""
+        created = self.client.post(self.URL, self.payload(), format="json").data
+        ids = [part["id"] for part in created["parts"]]
+
+        response = self.client.patch(
+            f"{self.URL}{created['id']}/",
+            {
+                "parts": [
+                    {"id": ids[0], "name": "Wire frame", "sort_order": 0},
+                    {"id": ids[1], "name": "Trim", "sort_order": 1},
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([part["id"] for part in response.data["parts"]], ids)
+        self.assertEqual(response.data["parts"][0]["name"], "Wire frame")
+
+    def test_a_part_dropped_from_the_payload_is_deleted(self):
+        created = self.client.post(self.URL, self.payload(), format="json").data
+        ids = [part["id"] for part in created["parts"]]
+
+        self.client.patch(
+            f"{self.URL}{created['id']}/",
+            {
+                "parts": [
+                    {"id": ids[0], "name": "Frame", "sort_order": 0},
+                    {"name": "Bow", "sort_order": 1},
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(DisplayProductPart.objects.filter(pk=ids[1]).count(), 0)

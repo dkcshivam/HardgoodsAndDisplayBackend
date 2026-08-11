@@ -23,9 +23,11 @@ from .serializers import (
 
 
 class DisplayProductViewSet(viewsets.ModelViewSet):
-    queryset = DisplayProduct.objects.select_related("category").all()
+    queryset = (
+        DisplayProduct.objects.select_related("category").prefetch_related("parts").all()
+    )
     serializer_class = DisplayProductSerializer
-    filterset_fields = ["status", "category"]
+    filterset_fields = ["status", "category", "is_multi_part"]
     search_fields = ["style_no", "description"]
     ordering_fields = ["style_no", "created_at"]
 

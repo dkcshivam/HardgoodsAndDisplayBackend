@@ -6,21 +6,46 @@ from .models import (
     DisplayOrder,
     DisplayOrderLine,
     DisplayProduct,
+    DisplayProductPart,
     PackStep,
     PackTemplate,
     PackTemplateItem,
 )
 
 
+class DisplayProductPartInline(admin.TabularInline):
+    model = DisplayProductPart
+    extra = 0
+    fields = (
+        "sort_order",
+        "name",
+        "customs_description",
+        "hsn_code",
+        "product_weight_kg",
+        ("length_in", "width_in", "height_in"),
+    )
+
+
 @admin.register(DisplayProduct)
 class DisplayProductAdmin(admin.ModelAdmin):
-    list_display = ("style_no", "description", "category", "product_weight_kg", "status")
-    list_filter = ("status", "category")
+    list_display = (
+        "style_no",
+        "description",
+        "category",
+        "packing",
+        "product_weight_kg",
+        "status",
+    )
+    list_filter = ("status", "is_multi_part", "category")
     search_fields = ("style_no", "description")
     readonly_fields = ("created_at", "updated_at")
+    inlines = [DisplayProductPartInline]
 
     fieldsets = (
-        ("Item", {"fields": ("style_no", "description", "category", "status")}),
+        (
+            "Item",
+            {"fields": ("style_no", "description", "category", "is_multi_part", "status")},
+        ),
         ("Customs", {"fields": ("customs_description", "hsn_code")}),
         (
             "Size and weight",
@@ -29,11 +54,25 @@ class DisplayProductAdmin(admin.ModelAdmin):
                     ("length_in", "width_in", "height_in"),
                     "product_weight_kg",
                 ),
-                "description": "The item itself. Its box belongs to the pack template.",
+                "description": (
+                    "The item itself. Its box belongs to the pack template. "
+                    "Leave empty on a multi-part product — its parts carry these."
+                ),
             },
         ),
         ("Record", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = super().get_readonly_fields(request, obj)
+        # Same rule as the API: the shape is fixed once the product exists.
+        return (*fields, "is_multi_part") if obj else fields
+
+    @admin.display(description="packing")
+    def packing(self, obj):
+        if not obj.is_multi_part:
+            return "single piece"
+        return f"{obj.parts.count()} parts"
 
 
 class PackTemplateItemInline(admin.TabularInline):

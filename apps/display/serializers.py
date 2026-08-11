@@ -7,14 +7,40 @@ from .models import (
     DisplayOrder,
     DisplayOrderLine,
     DisplayProduct,
+    DisplayProductPart,
     PackTemplate,
     PackTemplateItem,
 )
 
 
+class DisplayProductPartSerializer(serializers.ModelSerializer):
+    # Kept on write so an edit can match a payload row to the part it edits;
+    # without it every save would recreate the parts and orphan the template
+    # items and carton contents pointing at them.
+    id = serializers.IntegerField(required=False)
+    unit_cbm = serializers.DecimalField(max_digits=12, decimal_places=4, read_only=True)
+
+    class Meta:
+        model = DisplayProductPart
+        fields = [
+            "id",
+            "name",
+            "description",
+            "customs_description",
+            "hsn_code",
+            "product_weight_kg",
+            "length_in",
+            "width_in",
+            "height_in",
+            "unit_cbm",
+            "sort_order",
+        ]
+
+
 class DisplayProductSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source="category.name", read_only=True)
     unit_cbm = serializers.DecimalField(max_digits=12, decimal_places=4, read_only=True)
+    parts = DisplayProductPartSerializer(many=True, required=False)
 
     class Meta:
         model = DisplayProduct
@@ -26,14 +52,103 @@ class DisplayProductSerializer(serializers.ModelSerializer):
             "category_name",
             "customs_description",
             "hsn_code",
+            "is_multi_part",
             "status",
             "product_weight_kg",
             "length_in",
             "width_in",
             "height_in",
             "unit_cbm",
+            "parts",
             "created_at",
         ]
+
+    def validate(self, attrs):
+        is_multi_part = attrs.get(
+            "is_multi_part",
+            getattr(self.instance, "is_multi_part", False),
+        )
+        parts = attrs.get("parts")
+
+        # The shape decides how this SKU is counted and packed, so orders
+        # already planned under one shape would silently change meaning.
+        if self.instance and is_multi_part != self.instance.is_multi_part:
+            raise serializers.ValidationError(
+                {
+                    "is_multi_part": "How a product packs is fixed once it is saved. "
+                    "Create a new style number for a different shape."
+                }
+            )
+
+        if is_multi_part:
+            own = [f for f in DisplayProduct.OWN_FIGURE_FIELDS if attrs.get(f) is not None]
+            if own:
+                raise serializers.ValidationError(
+                    {
+                        own[0]: "A multi-part product is never handled whole — "
+                        "each part carries its own weight and size."
+                    }
+                )
+            if parts is not None and len(parts) < 2:
+                raise serializers.ValidationError(
+                    {"parts": "A multi-part product needs at least two parts."}
+                )
+            if parts is None and self.instance is None:
+                raise serializers.ValidationError(
+                    {"parts": "A multi-part product needs at least two parts."}
+                )
+        elif parts:
+            raise serializers.ValidationError(
+                {"parts": "A single-piece product has no parts."}
+            )
+
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        parts = validated_data.pop("parts", [])
+        product = DisplayProduct.objects.create(**validated_data)
+        self._sync_parts(product, parts)
+        return product
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        parts = validated_data.pop("parts", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if parts is not None:
+            # The form always sends the complete list.
+            self._sync_parts(instance, parts)
+
+        return instance
+
+    @staticmethod
+    def _sync_parts(product, parts_data):
+        """
+        Match payload rows to existing parts by id and update them in place.
+        Recreating them would break every template item aimed at a part.
+        """
+        existing = {part.id: part for part in product.parts.all()}
+        kept = set()
+
+        for index, data in enumerate(parts_data):
+            part_id = data.pop("id", None)
+            data.setdefault("sort_order", index)
+            part = existing.get(part_id)
+
+            if part is None:
+                part = DisplayProductPart.objects.create(product=product, **data)
+            else:
+                for attr, value in data.items():
+                    setattr(part, attr, value)
+                part.save()
+
+            kept.add(part.id)
+
+        product.parts.exclude(id__in=kept).delete()
 
 
 # ── Templates ────────────────────────────────────────────────────────
