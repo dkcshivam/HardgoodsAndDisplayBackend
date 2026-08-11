@@ -15,6 +15,7 @@ from apps.display.models import (
     DisplayOrder,
     DisplayOrderLine,
     DisplayProduct,
+    DisplayProductPart,
     PackStep,
     PackTemplate,
     PackTemplateItem,
@@ -38,16 +39,32 @@ PRODUCTS = [
      0.90, 14, 10, 8),
 ]
 
-# code, name, box L/W/H, box kg, packing kg, [(style_no, qty)]
+# A product whose parts are packed apart: the panels stack flat with each
+# other, the post is long and thin, and no box sensibly holds both.
+# style_no, description, [(part name, customs, hsn, weight kg, L, W, H)]
+PART_PRODUCTS = [
+    ("DSP-TRE-60", '60" Display Tree', [
+        ("Branch panels", "Artificial Foliage Panels", "6702.90", 3.40, 30, 22, 6),
+        ("Trunk and stand", "Metal Display Stand", "7326.90", 4.80, 46, 8, 8),
+    ]),
+]
+
+# code, name, box L/W/H, box kg, packing kg, [(style_no, part name or None, qty)]
 TEMPLATES = [
     ("TPL-001", "30 bows + 5 wreaths", (44, 32, 32), 1.6, 0.5,
-     [("DSP-BOW-12", 30), ("DSP-WRT-24", 5)]),
+     [("DSP-BOW-12", None, 30), ("DSP-WRT-24", None, 5)]),
     ("TPL-002", "12 ornament sets + 6 garlands", (30, 20, 20), 0.9, 0.6,
-     [("DSP-ORN-06", 12), ("DSP-GRL-72", 6)]),
+     [("DSP-ORN-06", None, 12), ("DSP-GRL-72", None, 6)]),
     ("TPL-003", "6 garlands", (28, 20, 16), 0.8, 0.25,
-     [("DSP-GRL-72", 6)]),
+     [("DSP-GRL-72", None, 6)]),
     ("TPL-004", "10 wreaths", (42, 30, 30), 1.5, 0.5,
-     [("DSP-WRT-24", 10)]),
+     [("DSP-WRT-24", None, 10)]),
+    # The two halves of the tree, in the two boxes that suit them. Panels
+    # travel four to a box with bows filling the gaps; the posts go alone.
+    ("TPL-005", "4 tree panels + 20 bows", (34, 26, 18), 1.4, 0.6,
+     [("DSP-TRE-60", "Branch panels", 4), ("DSP-BOW-12", None, 20)]),
+    ("TPL-006", "3 tree posts", (50, 12, 12), 1.1, 0.4,
+     [("DSP-TRE-60", "Trunk and stand", 3)]),
 ]
 
 ORDER_LINES = [
@@ -55,6 +72,7 @@ ORDER_LINES = [
     ("DSP-ORN-06", 96, "Mercury Silver"),
     ("DSP-WRT-24", 140, "Frosted Green"),
     ("DSP-GRL-72", 158, "Natural Cedar"),
+    ("DSP-TRE-60", 24, "Snow Flocked"),
 ]
 
 
@@ -70,6 +88,7 @@ class Command(BaseCommand):
         DisplayOrder.objects.all().delete()
         PackTemplateItem.objects.all().delete()
         PackTemplate.objects.all().delete()
+        DisplayProductPart.objects.all().delete()
         DisplayProduct.objects.all().delete()
 
         category, _ = Category.objects.get_or_create(name="Decor")
@@ -98,7 +117,30 @@ class Command(BaseCommand):
                 width_in=d(width),
                 height_in=d(height),
             )
-        self.stdout.write(f"  {len(products)} products")
+        parts = {}
+        for style_no, description, part_specs in PART_PRODUCTS:
+            products[style_no] = DisplayProduct.objects.create(
+                style_no=style_no,
+                description=description,
+                category=category,
+                is_multi_part=True,
+            )
+            for order_index, spec in enumerate(part_specs):
+                name, customs, hsn, weight, length, width, height = spec
+                parts[(style_no, name)] = DisplayProductPart.objects.create(
+                    product=products[style_no],
+                    name=name,
+                    customs_description=customs,
+                    hsn_code=hsn,
+                    product_weight_kg=d(weight),
+                    length_in=d(length),
+                    width_in=d(width),
+                    height_in=d(height),
+                    sort_order=order_index,
+                )
+        self.stdout.write(
+            f"  {len(products)} products ({len(PART_PRODUCTS)} of them in parts)"
+        )
 
         for code, name, box, box_kg, packing_kg, items in TEMPLATES:
             length, width, height = box
@@ -115,9 +157,12 @@ class Command(BaseCommand):
             PackTemplateItem.objects.bulk_create(
                 [
                     PackTemplateItem(
-                        template=template, product=products[style_no], quantity=quantity
+                        template=template,
+                        product=products[style_no],
+                        part=parts.get((style_no, part_name)),
+                        quantity=quantity,
                     )
-                    for style_no, quantity in items
+                    for style_no, part_name, quantity in items
                 ]
             )
         self.stdout.write(f"  {len(TEMPLATES)} templates")
