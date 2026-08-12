@@ -1,8 +1,10 @@
+from django.http import FileResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from . import services
+from .exports import build_packing_list, packing_list_filename
 from .models import (
     NEXT_STATUS,
     DisplayOrder,
@@ -160,6 +162,30 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
                 **self._plan(order, self._requested_store(request, order)),
                 "adjustments": AdjustmentSerializer(adjustments, many=True).data,
             }
+        )
+
+    @action(detail=True, methods=["get"], url_path="packing-list")
+    def packing_list(self, request, pk=None):
+        """
+        The plan as an Excel sheet, blocked by store. Available from the
+        moment cartons exist — a draft list is what the floor works from
+        while the order is still being packed.
+        """
+        order = self.get_object()
+
+        if not order.cartons.exists():
+            return Response(
+                {"detail": "There are no cartons to list yet. Pack a store first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return FileResponse(
+            build_packing_list(order),
+            as_attachment=True,
+            filename=packing_list_filename(order),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
         )
 
     @action(detail=True, methods=["post"], url_path="replicate")

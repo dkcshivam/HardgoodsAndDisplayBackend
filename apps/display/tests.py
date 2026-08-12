@@ -1,5 +1,6 @@
 from collections import Counter
 from decimal import Decimal
+from io import BytesIO
 
 from django.test import TestCase
 from rest_framework.test import APITestCase
@@ -523,6 +524,91 @@ class StorePackingTests(TestCase):
         plan = services.packing_summary(self.order, self.portland.id)
         self.assertEqual([row.store_code for row in plan["steps"]], ["118"])
         self.assertEqual(len(services.packing_summary(self.order)["steps"]), 2)
+
+
+class DisplayPackingListTests(APITestCase):
+    """The sheet is blocked by store, because that is how it is picked."""
+
+    def setUp(self):
+        self.merchant = Merchant.objects.create(code="ANT", name="Anthropologie")
+        self.portland = store(self.merchant, "118")
+        self.portland.ship_city = "Portland"
+        self.portland.save()
+        self.austin = store(self.merchant, "204")
+        self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))
+
+        self.order = DisplayOrder.objects.create(name="Split", merchant=self.merchant)
+        for outlet in (self.portland, self.austin):
+            DisplayOrderLine.objects.create(
+                order=self.order, store=outlet, product=self.bow, quantity=30
+            )
+        self.tpl = template("TPL-30", [(self.bow, 30)])
+
+    def url(self):
+        return f"/api/display-orders/{self.order.id}/packing-list/"
+
+    def rows(self):
+        from openpyxl import load_workbook
+
+        response = self.client.get(self.url())
+        self.assertEqual(response.status_code, 200)
+        book = load_workbook(BytesIO(b"".join(response.streaming_content)))
+        return [
+            [cell.value for cell in row] for row in book[self.order.number].iter_rows()
+        ]
+
+    def test_no_cartons_is_a_400_not_an_empty_sheet(self):
+        response = self.client.get(self.url())
+        self.assertEqual(response.status_code, 400)
+
+    def test_each_store_gets_its_own_block_and_subtotal(self):
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        services.apply_step(self.order, self.tpl, self.austin, count=1)
+
+        flat = "\n".join(
+            " ".join(str(cell) for cell in row if cell is not None)
+            for row in self.rows()
+        )
+
+        self.assertIn("STORE 118", flat)
+        self.assertIn("Portland", flat)
+        self.assertIn("STORE 204", flat)
+        self.assertIn("118 subtotal · 1 carton", flat)
+        self.assertIn("204 subtotal · 1 carton", flat)
+        self.assertIn("ORDER TOTAL · 2 cartons", flat)
+
+    def test_the_order_total_skips_the_store_subtotals(self):
+        """
+        A single span across the blocks would add every carton twice, once as
+        itself and once inside its store's subtotal.
+        """
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        services.apply_step(self.order, self.tpl, self.austin, count=1)
+
+        total = next(
+            row[1]
+            for row in self.rows()
+            if row[0] and str(row[0]).startswith("ORDER TOTAL")
+        )
+        # Two blocks of one row each, named separately — never B9:B24.
+        self.assertRegex(total, r"^=SUM\([A-Z]\d+:[A-Z]\d+,[A-Z]\d+:[A-Z]\d+\)$")
+
+        subtotal_rows = [
+            row[0] for row in self.rows() if row[0] and "subtotal" in str(row[0])
+        ]
+        cited = total[len("=SUM(") : -1].split(",")
+        self.assertEqual(len(cited), len(subtotal_rows))
+
+    def test_a_store_with_no_cartons_is_left_out(self):
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+
+        flat = "\n".join(
+            " ".join(str(cell) for cell in row if cell is not None)
+            for row in self.rows()
+        )
+
+        self.assertIn("STORE 118", flat)
+        self.assertNotIn("STORE 204", flat)
 
 
 class DisplayOrderNumberTests(TestCase):
