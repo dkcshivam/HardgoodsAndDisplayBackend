@@ -1,6 +1,7 @@
 """
-The worked example from ARCHITECTURE.md §10.2: a seasonal store-decor order
-and four templates to pack it with.
+A clean product catalogue for manual testing — 15 Display products, some
+single-part and some multi-part, and nothing else. No templates, no orders:
+build those yourself through the app.
 
 Wipes the display tables only — Hardgoods data is left alone.
 """
@@ -37,47 +38,51 @@ PRODUCTS = [
      1.20, 24, 24, 5),
     ("DSP-GRL-72", '72" Cedar Garland', "Artificial Foliage Garland", "6702.90",
      0.90, 14, 10, 8),
+    ("DSP-LAN-10", '10" Metal Lantern', "Decorative Metal Lantern", "8306.29",
+     0.75, 10, 10, 14),
+    ("DSP-CDH-08", '8" Ceramic Candle Holder', "Ceramic Candle Holder", "6913.90",
+     0.40, 8, 8, 8),
+    ("DSP-PLN-14", '14" Terracotta Planter', "Ceramic Planter", "6914.90",
+     1.80, 14, 14, 12),
+    ("DSP-RUN-90", '90" Linen Table Runner', "Textile Table Runner", "6304.93",
+     0.30, 20, 6, 2),
+    ("DSP-STK-18", '18" Knit Stocking', "Knitted Textile Stocking", "6307.90",
+     0.20, 18, 8, 2),
+    ("DSP-SNG-05", '5" Glass Snow Globe', "Glass Snow Globe", "9505.10",
+     0.65, 5, 5, 6),
 ]
 
-# A product whose parts are packed apart: the panels stack flat with each
-# other, the post is long and thin, and no box sensibly holds both.
+# Products whose parts are packed apart — too big, too different in shape,
+# or just don't fit in one box together.
 # style_no, description, [(part name, customs, hsn, weight kg, L, W, H)]
 PART_PRODUCTS = [
     ("DSP-TRE-60", '60" Display Tree', [
         ("Branch panels", "Artificial Foliage Panels", "6702.90", 3.40, 30, 22, 6),
         ("Trunk and stand", "Metal Display Stand", "7326.90", 4.80, 46, 8, 8),
     ]),
-]
-
-# code, name, box L/W/H, box kg, packing kg, [(style_no, part name or None, qty)]
-TEMPLATES = [
-    ("TPL-001", "30 bows + 5 wreaths", (44, 32, 32), 1.6, 0.5,
-     [("DSP-BOW-12", None, 30), ("DSP-WRT-24", None, 5)]),
-    ("TPL-002", "12 ornament sets + 6 garlands", (30, 20, 20), 0.9, 0.6,
-     [("DSP-ORN-06", None, 12), ("DSP-GRL-72", None, 6)]),
-    ("TPL-003", "6 garlands", (28, 20, 16), 0.8, 0.25,
-     [("DSP-GRL-72", None, 6)]),
-    ("TPL-004", "10 wreaths", (42, 30, 30), 1.5, 0.5,
-     [("DSP-WRT-24", None, 10)]),
-    # The two halves of the tree, in the two boxes that suit them. Panels
-    # travel four to a box with bows filling the gaps; the posts go alone.
-    ("TPL-005", "4 tree panels + 20 bows", (34, 26, 18), 1.4, 0.6,
-     [("DSP-TRE-60", "Branch panels", 4), ("DSP-BOW-12", None, 20)]),
-    ("TPL-006", "3 tree posts", (50, 12, 12), 1.1, 0.4,
-     [("DSP-TRE-60", "Trunk and stand", 3)]),
-]
-
-ORDER_LINES = [
-    ("DSP-BOW-12", 840, "Cranberry"),
-    ("DSP-ORN-06", 96, "Mercury Silver"),
-    ("DSP-WRT-24", 140, "Frosted Green"),
-    ("DSP-GRL-72", 158, "Natural Cedar"),
-    ("DSP-TRE-60", 24, "Snow Flocked"),
+    ("DSP-LDR-72", '72" Ladder Shelf', [
+        ("Side rails", "Wooden Ladder Rails", "4421.99", 3.20, 72, 4, 2),
+        ("Shelf boards", "Wooden Shelf Boards", "4421.99", 2.10, 24, 10, 1),
+    ]),
+    ("DSP-ARC-84", '84" Garden Arch', [
+        ("Left post", "Metal Arch Post", "7326.90", 4.50, 84, 4, 4),
+        ("Right post", "Metal Arch Post", "7326.90", 4.50, 84, 4, 4),
+        ("Top arch", "Metal Arch Top", "7326.90", 3.80, 40, 40, 4),
+    ]),
+    ("DSP-SCR-60", '60" Room Divider Screen', [
+        ("Panel A", "Wooden Screen Panel", "4421.99", 5.00, 60, 20, 2),
+        ("Panel B", "Wooden Screen Panel", "4421.99", 5.00, 60, 20, 2),
+        ("Panel C", "Wooden Screen Panel", "4421.99", 5.00, 60, 20, 2),
+    ]),
+    ("DSP-TBL-48", '48" Display Table', [
+        ("Tabletop", "Wooden Table Top", "4421.99", 6.00, 48, 24, 3),
+        ("Legs and base", "Metal Table Base", "9403.90", 5.50, 24, 24, 20),
+    ]),
 ]
 
 
 class Command(BaseCommand):
-    help = "Load the Display worked example — products, templates and one order."
+    help = "Load a clean Display product catalogue — no templates, no orders."
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -93,9 +98,8 @@ class Command(BaseCommand):
 
         category, _ = Category.objects.get_or_create(name="Decor")
 
-        merchant = Merchant.objects.filter(code="TRN").first()
-        if merchant is None:
-            merchant = Merchant.objects.create(
+        if not Merchant.objects.filter(code="TRN").exists():
+            Merchant.objects.create(
                 code="TRN",
                 name="Terrain Home",
                 contact_name="Marco Reyes",
@@ -104,9 +108,8 @@ class Command(BaseCommand):
                 country="US",
             )
 
-        products = {}
         for style_no, description, customs, hsn, weight, length, width, height in PRODUCTS:
-            products[style_no] = DisplayProduct.objects.create(
+            DisplayProduct.objects.create(
                 style_no=style_no,
                 description=description,
                 category=category,
@@ -117,9 +120,9 @@ class Command(BaseCommand):
                 width_in=d(width),
                 height_in=d(height),
             )
-        parts = {}
+
         for style_no, description, part_specs in PART_PRODUCTS:
-            products[style_no] = DisplayProduct.objects.create(
+            product = DisplayProduct.objects.create(
                 style_no=style_no,
                 description=description,
                 category=category,
@@ -127,8 +130,8 @@ class Command(BaseCommand):
             )
             for order_index, spec in enumerate(part_specs):
                 name, customs, hsn, weight, length, width, height = spec
-                parts[(style_no, name)] = DisplayProductPart.objects.create(
-                    product=products[style_no],
+                DisplayProductPart.objects.create(
+                    product=product,
                     name=name,
                     customs_description=customs,
                     hsn_code=hsn,
@@ -138,50 +141,12 @@ class Command(BaseCommand):
                     height_in=d(height),
                     sort_order=order_index,
                 )
+
+        total_products = len(PRODUCTS) + len(PART_PRODUCTS)
         self.stdout.write(
-            f"  {len(products)} products ({len(PART_PRODUCTS)} of them in parts)"
+            f"  {total_products} products ({len(PART_PRODUCTS)} multi-part, "
+            f"{len(PRODUCTS)} single-part)"
         )
-
-        for code, name, box, box_kg, packing_kg, items in TEMPLATES:
-            length, width, height = box
-            template = PackTemplate.objects.create(
-                code=code,
-                name=name,
-                box_length_in=d(length),
-                box_width_in=d(width),
-                box_height_in=d(height),
-                box_weight_kg=d(box_kg),
-                packing_material_weight_kg=d(packing_kg),
-                is_library=True,
-            )
-            PackTemplateItem.objects.bulk_create(
-                [
-                    PackTemplateItem(
-                        template=template,
-                        product=products[style_no],
-                        part=parts.get((style_no, part_name)),
-                        quantity=quantity,
-                    )
-                    for style_no, part_name, quantity in items
-                ]
-            )
-        self.stdout.write(f"  {len(TEMPLATES)} templates")
-
-        order = DisplayOrder.objects.create(
-            name="Terrain Holiday Decor",
-            merchant=merchant,
-            buyer_name="Marco Reyes",
-            ship_country="US",
-            ship_line1="900 SE Water Ave",
-            ship_city="Portland",
-            ship_state="OR",
-            ship_postal_code="97214",
-        )
-        for style_no, quantity, color in ORDER_LINES:
-            DisplayOrderLine.objects.create(
-                order=order, product=products[style_no], quantity=quantity, color=color
-            )
-
-        total = sum(quantity for _, quantity, _ in ORDER_LINES)
-        self.stdout.write(f"  1 order ({total} units, no steps yet)")
-        self.stdout.write(self.style.SUCCESS("Display demo data loaded."))
+        self.stdout.write(self.style.SUCCESS(
+            "Display catalogue loaded — no templates or orders. Build those yourself."
+        ))
