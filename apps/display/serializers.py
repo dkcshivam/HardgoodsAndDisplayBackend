@@ -507,6 +507,12 @@ class StepRowSerializer(serializers.Serializer):
     remaining_after = QuantityRowSerializer(many=True)
 
 
+class StoreRefSerializer(serializers.Serializer):
+    store = serializers.IntegerField()
+    store_code = serializers.CharField()
+    store_name = serializers.CharField()
+
+
 class StoreProgressSerializer(serializers.Serializer):
     store = serializers.IntegerField()
     store_code = serializers.CharField()
@@ -550,6 +556,7 @@ class PackingPlanSerializer(serializers.Serializer):
     remaining = QuantityRowSerializer(many=True)
     applicable_templates = ApplicableTemplateSerializer(many=True)
     reconciliation = ReconciliationSerializer(many=True)
+    replicable = StoreRefSerializer(many=True)
     blockers = SignalSerializer(many=True)
     warnings = SignalSerializer(many=True)
     carton_count = serializers.IntegerField()
@@ -568,6 +575,12 @@ class ApplyStepSerializer(serializers.Serializer):
 
 class RecountStepSerializer(serializers.Serializer):
     count = serializers.IntegerField(min_value=1)
+
+
+class ReplicatePlanSerializer(serializers.Serializer):
+    """The store whose plan is being copied onto its identical neighbours."""
+
+    store = serializers.PrimaryKeyRelatedField(queryset=Store.objects.all())
 
 
 class AdjustmentSerializer(serializers.Serializer):

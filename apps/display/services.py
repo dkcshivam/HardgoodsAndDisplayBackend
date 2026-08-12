@@ -564,6 +564,62 @@ def reconcile(
     return rows
 
 
+def _demand_by_store(counts: dict, store_id: int) -> dict[StorePiece, int]:
+    return {
+        (product_id, part_id): quantity
+        for (store, product_id, part_id), quantity in counts.items()
+        if store == store_id
+    }
+
+
+def replicable_stores(order: DisplayOrder, source_store_id: int) -> list:
+    """
+    Stores the source store's plan could be copied onto verbatim: same demand,
+    and nothing packed yet.
+
+    Most of a fifty-store order wants the identical thing, so packing one and
+    copying it is the difference between three clicks and a hundred and fifty.
+    Anything already part-packed is left alone — copying onto it would mean
+    guessing what the packer meant.
+    """
+    if not order.steps.filter(store_id=source_store_id).exists():
+        return []
+
+    ordered = ordered_quantities(order)
+    remaining = remaining_quantities(order)
+    source = _demand_by_store(ordered, source_store_id)
+
+    targets = []
+    for store in order_stores(order):
+        if store.id == source_store_id:
+            continue
+        if _demand_by_store(ordered, store.id) != source:
+            continue
+        # Untouched: everything it ordered is still to pack.
+        if _demand_by_store(remaining, store.id) != source:
+            continue
+        targets.append(store)
+    return targets
+
+
+@transaction.atomic
+def replicate_plan(order: DisplayOrder, source_store_id: int) -> list:
+    """Apply the source store's steps, in order, to every matching store."""
+    targets = replicable_stores(order, source_store_id)
+    if not targets:
+        raise PackingError("No other store has this store's exact demand unpacked.")
+
+    steps = list(
+        order.steps.filter(store_id=source_store_id)
+        .select_related("template")
+        .order_by("sequence")
+    )
+    for store in targets:
+        for step in steps:
+            apply_step(order, step.template, store, step.count)
+    return targets
+
+
 def store_summaries(order: DisplayOrder) -> list[dict]:
     """
     One line per store: how far along it is. This is the overview the packing
@@ -778,6 +834,12 @@ def packing_summary(order: DisplayOrder, store_id: int | None = None) -> dict:
             applicable_templates(order, store_id) if store_id is not None else []
         ),
         "reconciliation": reconcile(order, store_id),
+        "replicable": [
+            {"store": s.id, "store_code": s.code, "store_name": s.name}
+            for s in (
+                replicable_stores(order, store_id) if store_id is not None else []
+            )
+        ],
         "blockers": blockers,
         "warnings": find_warnings(order),
         "carton_count": len(cartons),

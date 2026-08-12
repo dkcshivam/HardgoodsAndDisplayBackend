@@ -487,6 +487,35 @@ class StorePackingTests(TestCase):
         self.assertFalse(rows["204"]["is_done"])
         self.assertEqual(rows["204"]["remaining"], 30)
 
+    def test_a_plan_copies_onto_every_store_with_the_same_demand(self):
+        """Portland and Austin both want thirty, so one plan serves both."""
+        services.apply_step(self.order, self.box30, self.austin, count=1)
+
+        copied = services.replicate_plan(self.order, self.austin.id)
+
+        self.assertEqual([s.code for s in copied], ["118"])
+        self.assertEqual(self.order.steps.filter(store=self.portland).count(), 1)
+        self.assertEqual(services.remaining_quantities(self.order), {})
+
+    def test_a_store_wanting_something_else_is_not_copied_onto(self):
+        odd = store(self.merchant, "331")
+        DisplayOrderLine.objects.create(
+            order=self.order, store=odd, product=self.bow, quantity=45
+        )
+        services.apply_step(self.order, self.box30, self.austin, count=1)
+
+        targets = services.replicable_stores(self.order, self.austin.id)
+        self.assertEqual([s.code for s in targets], ["118"])
+
+    def test_a_part_packed_store_is_left_alone(self):
+        """Copying onto a store somebody has already started would overpack it."""
+        services.apply_step(self.order, self.box30, self.austin, count=1)
+        services.apply_step(self.order, self.box30, self.portland, count=1)
+
+        self.assertEqual(services.replicable_stores(self.order, self.austin.id), [])
+        with self.assertRaises(services.PackingError):
+            services.replicate_plan(self.order, self.austin.id)
+
     def test_a_plan_scoped_to_a_store_shows_only_its_steps(self):
         services.apply_step(self.order, self.box30, self.portland, count=1)
         services.apply_step(self.order, self.box30, self.austin, count=1)

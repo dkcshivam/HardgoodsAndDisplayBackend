@@ -19,6 +19,8 @@ from .serializers import (
     PackingPlanSerializer,
     PackTemplateSerializer,
     RecountStepSerializer,
+    ReplicatePlanSerializer,
+    StoreRefSerializer,
 )
 
 
@@ -157,6 +159,47 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
             {
                 **self._plan(order, self._requested_store(request, order)),
                 "adjustments": AdjustmentSerializer(adjustments, many=True).data,
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="replicate")
+    def replicate(self, request, pk=None):
+        """
+        Copy one store's plan onto every other store with the same demand and
+        nothing packed. The bulk move that makes a fifty-store order tractable.
+        """
+        order = self.get_object()
+
+        if order.status == DisplayOrderStatus.SHIPPED:
+            return Response(
+                {"detail": "This order has already shipped."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        payload = ReplicatePlanSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        source = payload.validated_data["store"]
+
+        try:
+            copied = services.replicate_plan(order, source.id)
+        except services.PackingError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+        self._advance_from_draft(order)
+        return Response(
+            {
+                **self._plan(order, source.id),
+                "replicated_to": StoreRefSerializer(
+                    [
+                        {
+                            "store": s.id,
+                            "store_code": s.code,
+                            "store_name": s.name,
+                        }
+                        for s in copied
+                    ],
+                    many=True,
+                ).data,
             }
         )
 
