@@ -34,12 +34,19 @@ class PackingError(Exception):
 
 # ── Demand ───────────────────────────────────────────────────────────
 
-#: What the loop counts: a whole product, or one part of one.
-Piece = tuple[int, int | None]
+#: What the loop counts: one store's demand for a whole product, or for one
+#: part of one. The store is part of the key because a carton is never shared
+#: between two of them, so their demands can never be pooled.
+Piece = tuple[int, int, int | None]
+
+#: The same thing seen from inside one store, where the store is a given.
+StorePiece = tuple[int, int | None]
 
 
 def _lines(order: DisplayOrder):
-    return order.lines.select_related("product").prefetch_related("product__parts")
+    return order.lines.select_related("product", "store").prefetch_related(
+        "product__parts"
+    )
 
 
 def ordered_quantities(order: DisplayOrder) -> Counter:
@@ -55,19 +62,19 @@ def ordered_quantities(order: DisplayOrder) -> Counter:
         product = line.product
         if product.is_multi_part:
             for part in product.parts.all():
-                demand[(product.id, part.id)] += line.quantity
+                demand[(line.store_id, product.id, part.id)] += line.quantity
         else:
-            demand[(product.id, None)] += line.quantity
+            demand[(line.store_id, product.id, None)] += line.quantity
     return demand
 
 
 def packed_quantities(order: DisplayOrder) -> Counter:
     packed: Counter = Counter()
     rows = DisplayCartonContent.objects.filter(carton__order=order).values_list(
-        "product_id", "part_id", "quantity"
+        "carton__store_id", "product_id", "part_id", "quantity"
     )
-    for product_id, part_id, quantity in rows:
-        packed[(product_id, part_id)] += quantity
+    for store_id, product_id, part_id, quantity in rows:
+        packed[(store_id, product_id, part_id)] += quantity
     return packed
 
 
@@ -87,10 +94,31 @@ def remaining_quantities(order: DisplayOrder) -> dict[Piece, int]:
     return remaining
 
 
-def max_applications(template: PackTemplate, remaining: dict[Piece, int]) -> int:
+def store_remaining(order: DisplayOrder, store_id: int) -> dict[StorePiece, int]:
+    """One store's leftovers, with the store dropped from the key."""
+    return {
+        (product_id, part_id): quantity
+        for (store, product_id, part_id), quantity in remaining_quantities(
+            order
+        ).items()
+        if store == store_id
+    }
+
+
+def order_stores(order: DisplayOrder) -> list:
+    """Every store this order is split across, in the order lines list them."""
+    stores, seen = [], set()
+    for line in _lines(order):
+        if line.store_id not in seen:
+            seen.add(line.store_id)
+            stores.append(line.store)
+    return stores
+
+
+def max_applications(template: PackTemplate, remaining: dict[StorePiece, int]) -> int:
     """
-    How many times this template fits what is left: the smallest whole number
-    of boxes any one of its pieces allows.
+    How many times this template fits what one store has left: the smallest
+    whole number of boxes any one of its pieces allows.
 
     12 ornament sets + 6 garlands against 96 and 158 gives
     min(96//12, 158//6) = min(8, 26) = 8 — capped by the ornaments.
@@ -109,17 +137,23 @@ def max_applications(template: PackTemplate, remaining: dict[Piece, int]) -> int
 
 @transaction.atomic
 def apply_step(
-    order: DisplayOrder, template: PackTemplate, count: int | None = None
+    order: DisplayOrder,
+    template: PackTemplate,
+    store,
+    count: int | None = None,
 ) -> PackStep:
     """
-    Add one step to the plan and build its cartons. `count` defaults to the
-    most that will fit, which is the common case and makes the loop one click.
+    Add one step to the plan and build its cartons, for one store.
+
+    `count` defaults to the most that will fit, which is the common case and
+    makes the loop one click.
     """
-    capacity = max_applications(template, remaining_quantities(order))
+    store_id = getattr(store, "id", store)
+    capacity = max_applications(template, store_remaining(order, store_id))
 
     if capacity < 1:
         raise PackingError(
-            f"{template.code} does not fit what is left of this order."
+            f"{template.code} does not fit what is left for this store."
         )
 
     if count is None:
@@ -133,7 +167,11 @@ def apply_step(
 
     sequence = (order.steps.aggregate(Max("sequence"))["sequence__max"] or 0) + 1
     step = PackStep.objects.create(
-        order=order, sequence=sequence, template=template, count=count
+        order=order,
+        sequence=sequence,
+        store_id=store_id,
+        template=template,
+        count=count,
     )
     _build_cartons(step)
     return step
@@ -156,6 +194,7 @@ def _build_cartons(step: PackStep) -> None:
         DisplayCarton(
             order=order,
             step=step,
+            store_id=step.store_id,
             carton_no=f"CTN-{start + offset:03d}",
             length_in=template.box_length_in,
             width_in=template.box_width_in,
@@ -242,7 +281,9 @@ def _replay_from(order: DisplayOrder, sequence: int) -> list[Adjustment]:
     adjustments: list[Adjustment] = []
 
     for step in list(order.steps.filter(sequence__gte=sequence).order_by("sequence")):
-        capacity = max_applications(step.template, remaining_quantities(order))
+        capacity = max_applications(
+            step.template, store_remaining(order, step.store_id)
+        )
 
         if capacity < 1:
             adjustments.append(
@@ -286,6 +327,9 @@ def _resequence(order: DisplayOrder) -> None:
 @dataclass
 class StepRow:
     sequence: int
+    store: int
+    store_code: str
+    store_name: str
     template: int
     template_code: str
     template_name: str
@@ -295,41 +339,52 @@ class StepRow:
     remaining_after: list[dict] = field(default_factory=list)
 
 
-def step_rows(order: DisplayOrder) -> list[StepRow]:
+def step_rows(order: DisplayOrder, store_id: int | None = None) -> list[StepRow]:
     """
     The plan as the screen shows it — what each step consumed and what was
     left afterwards. This is the derivation, and it is why a packer will trust
     the number 36 rather than redo it by hand.
+
+    Every step is walked so the running count stays honest, but only the
+    store asked about is returned: the others are a different conversation.
     """
     pieces = _piece_index(order)
     running = dict(ordered_quantities(order))
     rows: list[StepRow] = []
 
-    steps = order.steps.select_related("template").prefetch_related(
+    steps = order.steps.select_related("template", "store").prefetch_related(
         "template__items__product", "template__items__part"
     )
 
     for step in steps:
         consumed = []
         for item in step.template.items.all():
-            piece = (item.product_id, item.part_id)
+            piece = (step.store_id, item.product_id, item.part_id)
             used = item.quantity * step.count
             running[piece] = running.get(piece, 0) - used
             consumed.append(_quantity_row(piece, used, pieces))
 
+        if store_id is not None and step.store_id != store_id:
+            continue
+
         rows.append(
             StepRow(
                 sequence=step.sequence,
+                store=step.store_id,
+                store_code=step.store.code,
+                store_name=step.store.name,
                 template=step.template_id,
                 template_code=step.template.code,
                 template_name=step.template.name,
                 count=step.count,
                 carton_count=step.count,
                 consumed=consumed,
+                # Only this step's own store — what another store still needs
+                # says nothing about whether this step went well.
                 remaining_after=[
                     _quantity_row(piece, qty, pieces)
                     for piece, qty in running.items()
-                    if qty > 0
+                    if qty > 0 and piece[0] == step.store_id
                 ],
             )
         )
@@ -337,11 +392,12 @@ def step_rows(order: DisplayOrder) -> list[StepRow]:
     return rows
 
 
-def remaining_rows(order: DisplayOrder) -> list[dict]:
+def remaining_rows(order: DisplayOrder, store_id: int | None = None) -> list[dict]:
     pieces = _piece_index(order)
     return [
         _quantity_row(piece, qty, pieces)
         for piece, qty in remaining_quantities(order).items()
+        if store_id is None or piece[0] == store_id
     ]
 
 
@@ -352,16 +408,23 @@ def _piece_index(order: DisplayOrder) -> dict[Piece, tuple]:
         product = line.product
         if product.is_multi_part:
             for part in product.parts.all():
-                index[(product.id, part.id)] = (product, part)
+                index[(line.store_id, product.id, part.id)] = (
+                    line.store,
+                    product,
+                    part,
+                )
         else:
-            index[(product.id, None)] = (product, None)
+            index[(line.store_id, product.id, None)] = (line.store, product, None)
     return index
 
 
 def _quantity_row(piece: Piece, quantity: int, pieces: dict) -> dict:
-    product_id, part_id = piece
-    product, part = pieces.get(piece, (None, None))
+    store_id, product_id, part_id = piece
+    store, product, part = pieces.get(piece, (None, None, None))
     return {
+        "store": store_id,
+        "store_code": store.code if store else "",
+        "store_name": store.name if store else "",
         "product": product_id,
         "part": part_id,
         "style_no": product.style_no if product else "",
@@ -386,16 +449,19 @@ def _describe(item) -> str:
 # ── Which templates are worth offering ───────────────────────────────
 
 
-def applicable_templates(order: DisplayOrder) -> list[dict]:
+def applicable_templates(order: DisplayOrder, store_id: int) -> list[dict]:
     """
-    The picker: designs that fit what is left, biggest first. A template that
-    fits zero times is not offered, because applying it is the one thing the
-    loop can never do.
+    The picker: designs that fit what one store has left, biggest first. A
+    template that fits zero times is not offered, because applying it is the
+    one thing the loop can never do.
+
+    Scoped to a store because a box packs for a single destination — a design
+    that fits the order as a whole but no one store fits nothing at all.
 
     Three ways in: a global library design, a library design for this
     merchant, or a one-off written for this order.
     """
-    remaining = remaining_quantities(order)
+    remaining = store_remaining(order, store_id)
     if not remaining:
         return []
 
@@ -434,6 +500,8 @@ def applicable_templates(order: DisplayOrder) -> list[dict]:
 
 @dataclass
 class ReconciliationRow:
+    store: int
+    store_code: str
     product: int
     style_no: str
     ordered: int
@@ -441,40 +509,50 @@ class ReconciliationRow:
     is_matched: bool
 
 
-def reconcile(order: DisplayOrder) -> list[ReconciliationRow]:
+def reconcile(
+    order: DisplayOrder, store_id: int | None = None
+) -> list[ReconciliationRow]:
     """
-    Ordered against actually boxed.
+    Ordered against actually boxed, one row per store and product.
 
     A multi-part product counts as packed only once every part has a box, so
     each part is counted on its own and the lowest wins: twenty tops and
     eighteen legs is eighteen tables, not nineteen. That is both true and
     actionable — go and find two legs.
+
+    Two stores wanting the same product are two rows, because twenty-four
+    wreaths in Portland do nothing for Austin.
     """
     packed = packed_quantities(order)
     rows = []
 
-    # One row per product, not one per line: a product six stores ordered is
-    # six lines but a single thing to reconcile, for as long as the plan
-    # itself counts the order as a whole.
-    ordered: dict[int, int] = {}
+    ordered: dict[tuple[int, int], int] = {}
     products: dict[int, object] = {}
+    stores: dict[int, object] = {}
     for line in _lines(order):
-        ordered[line.product_id] = ordered.get(line.product_id, 0) + line.quantity
+        if store_id is not None and line.store_id != store_id:
+            continue
+        key = (line.store_id, line.product_id)
+        ordered[key] = ordered.get(key, 0) + line.quantity
         products[line.product_id] = line.product
+        stores[line.store_id] = line.store
 
-    for product_id, wanted in ordered.items():
+    for (store, product_id), wanted in ordered.items():
         product = products[product_id]
 
         if product.is_multi_part:
             counts = [
-                packed.get((product.id, part.id), 0) for part in product.parts.all()
+                packed.get((store, product.id, part.id), 0)
+                for part in product.parts.all()
             ]
             boxed = min(counts, default=0)
         else:
-            boxed = packed.get((product.id, None), 0)
+            boxed = packed.get((store, product.id, None), 0)
 
         rows.append(
             ReconciliationRow(
+                store=store,
+                store_code=stores[store].code,
                 product=product.id,
                 style_no=product.style_no,
                 ordered=wanted,
@@ -483,6 +561,46 @@ def reconcile(order: DisplayOrder) -> list[ReconciliationRow]:
             )
         )
 
+    return rows
+
+
+def store_summaries(order: DisplayOrder) -> list[dict]:
+    """
+    One line per store: how far along it is. This is the overview the packing
+    screen opens on, because at fifty stores the useful question is which
+    ones are not finished.
+    """
+    ordered = ordered_quantities(order)
+    packed = packed_quantities(order)
+    cartons = Counter(
+        order.cartons.values_list("store_id", flat=True)
+    )
+
+    rows = []
+    for store in order_stores(order):
+        wanted = sum(q for piece, q in ordered.items() if piece[0] == store.id)
+        boxed = sum(
+            min(q, packed.get(piece, 0))
+            for piece, q in ordered.items()
+            if piece[0] == store.id
+        )
+        left = sum(
+            max(0, q - packed.get(piece, 0))
+            for piece, q in ordered.items()
+            if piece[0] == store.id
+        )
+        rows.append(
+            {
+                "store": store.id,
+                "store_code": store.code,
+                "store_name": store.name,
+                "ordered": wanted,
+                "packed": boxed,
+                "remaining": left,
+                "carton_count": cartons.get(store.id, 0),
+                "is_done": left == 0,
+            }
+        )
     return rows
 
 
@@ -573,7 +691,8 @@ def find_blockers(order: DisplayOrder) -> list[Blocker]:
             blockers.append(
                 Blocker(
                     "quantity_mismatch",
-                    f"{row.style_no}: packed {row.packed} of {row.ordered} ordered",
+                    f"Store {row.store_code} · {row.style_no}: packed "
+                    f"{row.packed} of {row.ordered} ordered",
                 )
             )
 
@@ -636,21 +755,29 @@ def find_warnings(order: DisplayOrder) -> list[Warning_]:
 # ── Plan summary ─────────────────────────────────────────────────────
 
 
-def packing_summary(order: DisplayOrder) -> dict:
+def packing_summary(order: DisplayOrder, store_id: int | None = None) -> dict:
     """
     Everything the packing screen needs except the cartons themselves, which
     are paginated separately — a finished plan can run to thousands of boxes
     and the screen shows steps, not boxes.
+
+    `stores` and the totals always describe the whole order; the rest narrows
+    to one store when asked, because that is the only scope in which a box
+    design means anything.
     """
     cartons = list(order.cartons.prefetch_related("contents"))
     blockers = find_blockers(order)
 
     return {
         "order": order.id,
-        "steps": step_rows(order),
-        "remaining": remaining_rows(order),
-        "applicable_templates": applicable_templates(order),
-        "reconciliation": reconcile(order),
+        "store": store_id,
+        "stores": store_summaries(order),
+        "steps": step_rows(order, store_id),
+        "remaining": remaining_rows(order, store_id),
+        "applicable_templates": (
+            applicable_templates(order, store_id) if store_id is not None else []
+        ),
+        "reconciliation": reconcile(order, store_id),
         "blockers": blockers,
         "warnings": find_warnings(order),
         "carton_count": len(cartons),

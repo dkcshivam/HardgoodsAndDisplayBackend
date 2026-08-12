@@ -96,12 +96,12 @@ class DisplayPackingTests(TestCase):
 
     def test_max_applications_takes_the_scarcest_product(self):
         """12 per box against 96 ornament sets allows 8; the garlands allow 26."""
-        remaining = services.remaining_quantities(self.order)
+        remaining = services.store_remaining(self.order, self.store.id)
         self.assertEqual(services.max_applications(self.t2, remaining), 8)
 
     def test_template_with_no_items_never_applies(self):
         empty = PackTemplate.objects.create(code="TPL-EMPTY", name="empty")
-        remaining = services.remaining_quantities(self.order)
+        remaining = services.store_remaining(self.order, self.store.id)
         self.assertEqual(services.max_applications(empty, remaining), 0)
 
     # ── The loop ─────────────────────────────────────────────────────
@@ -109,13 +109,13 @@ class DisplayPackingTests(TestCase):
     def test_the_worked_example(self):
         """ARCHITECTURE.md §10.2, end to end."""
         for tpl, count in ((self.t1, 28), (self.t2, 8), (self.t3, 18)):
-            step = services.apply_step(self.order, tpl)
+            step = services.apply_step(self.order, tpl, self.store)
             self.assertEqual(step.count, count, f"{tpl.code} applied {step.count}")
 
-        self.assertEqual(services.remaining_quantities(self.order), {(self.grl.id, None): 2})
+        self.assertEqual(services.remaining_quantities(self.order), {(self.store.id, self.grl.id, None): 2})
 
         tail = template("TPL-TAIL", [(self.grl, 2)], box=(20, 14, 12))
-        services.apply_step(self.order, tail)
+        services.apply_step(self.order, tail, self.store)
 
         self.assertEqual(services.remaining_quantities(self.order), {})
         self.assertEqual(self.order.cartons.count(), 55)
@@ -124,17 +124,17 @@ class DisplayPackingTests(TestCase):
 
     def test_a_count_above_capacity_is_refused(self):
         with self.assertRaises(services.PackingError):
-            services.apply_step(self.order, self.t1, count=29)
+            services.apply_step(self.order, self.t1, self.store, count=29)
 
     def test_a_template_that_does_not_fit_is_refused(self):
-        services.apply_step(self.order, self.t1)  # 28, takes every wreath
+        services.apply_step(self.order, self.t1, self.store)  # 28, takes every wreath
         with self.assertRaises(services.PackingError):
-            services.apply_step(self.order, self.t4)
+            services.apply_step(self.order, self.t4, self.store)
 
     # ── Cartons ──────────────────────────────────────────────────────
 
     def test_carton_weights_come_from_contents(self):
-        services.apply_step(self.order, self.t1, count=1)
+        services.apply_step(self.order, self.t1, self.store, count=1)
         carton = self.order.cartons.get()
 
         # 30 x 0.08 + 5 x 1.20 = 8.4, plus 0.5 packing, plus 1.6 box.
@@ -143,8 +143,8 @@ class DisplayPackingTests(TestCase):
         self.assertEqual(carton.contents.count(), 2)
 
     def test_carton_numbers_run_on_across_steps(self):
-        services.apply_step(self.order, self.t1, count=2)
-        services.apply_step(self.order, self.t2, count=2)
+        services.apply_step(self.order, self.t1, self.store, count=2)
+        services.apply_step(self.order, self.t2, self.store, count=2)
         self.assertEqual(
             list(self.order.cartons.values_list("carton_no", flat=True)),
             ["CTN-001", "CTN-002", "CTN-003", "CTN-004"],
@@ -152,8 +152,8 @@ class DisplayPackingTests(TestCase):
 
     def test_earlier_carton_numbers_survive_a_later_edit(self):
         """A number already written on a box must not move."""
-        services.apply_step(self.order, self.t1, count=2)
-        services.apply_step(self.order, self.t2, count=2)
+        services.apply_step(self.order, self.t1, self.store, count=2)
+        services.apply_step(self.order, self.t2, self.store, count=2)
         services.recount_step(self.order, 2, 1)
 
         self.assertEqual(
@@ -175,8 +175,8 @@ class DisplayPackingTests(TestCase):
         a = template("TPL-A", [(self.bow, 5)])
         b = template("TPL-B", [(self.bow, 5)])
 
-        services.apply_step(small, a, count=1)
-        services.apply_step(small, b, count=1)
+        services.apply_step(small, a, self.store, count=1)
+        services.apply_step(small, b, self.store, count=1)
 
         adjustments = services.recount_step(small, 1, 2)
 
@@ -186,9 +186,9 @@ class DisplayPackingTests(TestCase):
         self.assertEqual(services.remaining_quantities(small), {})
 
     def test_deleting_a_step_closes_the_gap_in_the_sequence(self):
-        services.apply_step(self.order, self.t1, count=1)
-        services.apply_step(self.order, self.t2, count=1)
-        services.apply_step(self.order, self.t3, count=1)
+        services.apply_step(self.order, self.t1, self.store, count=1)
+        services.apply_step(self.order, self.t2, self.store, count=1)
+        services.apply_step(self.order, self.t3, self.store, count=1)
 
         services.delete_step(self.order, 2)
 
@@ -198,34 +198,34 @@ class DisplayPackingTests(TestCase):
         )
 
     def test_deleting_a_step_returns_its_units_to_the_remainder(self):
-        services.apply_step(self.order, self.t2, count=8)
-        before = services.remaining_quantities(self.order)[(self.grl.id, None)]
+        services.apply_step(self.order, self.t2, self.store, count=8)
+        before = services.remaining_quantities(self.order)[(self.store.id, self.grl.id, None)]
         services.delete_step(self.order, 1)
-        after = services.remaining_quantities(self.order)[(self.grl.id, None)]
+        after = services.remaining_quantities(self.order)[(self.store.id, self.grl.id, None)]
         self.assertEqual(after - before, 48)
 
     # ── Reconciliation, blockers, warnings ───────────────────────────
 
     def test_an_unpacked_remainder_blocks(self):
-        services.apply_step(self.order, self.t1, count=1)
+        services.apply_step(self.order, self.t1, self.store, count=1)
         codes = {blocker.code for blocker in services.find_blockers(self.order)}
         self.assertIn("quantity_mismatch", codes)
 
     def test_a_carton_missing_dimensions_blocks(self):
-        services.apply_step(self.order, self.t1, count=1)
+        services.apply_step(self.order, self.t1, self.store, count=1)
         self.order.cartons.update(width_in=None)
         codes = {blocker.code for blocker in services.find_blockers(self.order)}
         self.assertIn("missing_dimensions", codes)
 
     def test_gross_below_net_blocks(self):
-        services.apply_step(self.order, self.t1, count=1)
+        services.apply_step(self.order, self.t1, self.store, count=1)
         self.order.cartons.update(gross_weight_kg=Decimal("1.000"))
         codes = {blocker.code for blocker in services.find_blockers(self.order)}
         self.assertIn("gross_below_net", codes)
 
     def test_a_mostly_empty_box_warns_but_does_not_block(self):
         roomy = template("TPL-AIR", [(self.bow, 1)], box=(40, 40, 40))
-        services.apply_step(self.order, roomy, count=1)
+        services.apply_step(self.order, roomy, self.store, count=1)
 
         codes = {warning.code for warning in services.find_warnings(self.order)}
         self.assertIn("poor_fill", codes)
@@ -234,7 +234,7 @@ class DisplayPackingTests(TestCase):
         )
 
     def test_overfilling_a_carton_warns_but_does_not_block(self):
-        services.apply_step(self.order, self.t3, count=1)
+        services.apply_step(self.order, self.t3, self.store, count=1)
         content = self.order.cartons.get().contents.get()
         content.quantity = 8  # template holds 6
         content.save()
@@ -245,11 +245,11 @@ class DisplayPackingTests(TestCase):
     # ── The picker ───────────────────────────────────────────────────
 
     def test_only_templates_that_still_fit_are_offered(self):
-        services.apply_step(self.order, self.t1)
-        services.apply_step(self.order, self.t2)
-        services.apply_step(self.order, self.t3)
+        services.apply_step(self.order, self.t1, self.store)
+        services.apply_step(self.order, self.t2, self.store)
+        services.apply_step(self.order, self.t3, self.store)
 
-        self.assertEqual(services.applicable_templates(self.order), [])
+        self.assertEqual(services.applicable_templates(self.order, self.store.id), [])
 
     def test_a_one_off_is_offered_on_the_order_it_was_written_for(self):
         """Saving a tail-filler that then never appears is the same as losing it."""
@@ -258,7 +258,7 @@ class DisplayPackingTests(TestCase):
         tail.order = self.order
         tail.save()
 
-        offered = {row["code"] for row in services.applicable_templates(self.order)}
+        offered = {row["code"] for row in services.applicable_templates(self.order, self.store.id)}
         self.assertIn("TPL-TAIL", offered)
 
     def test_a_one_off_stays_off_every_other_order(self):
@@ -272,7 +272,7 @@ class DisplayPackingTests(TestCase):
             order=other, store=self.store, product=self.grl, quantity=50
         )
 
-        offered = {row["code"] for row in services.applicable_templates(other)}
+        offered = {row["code"] for row in services.applicable_templates(other, self.store.id)}
         self.assertNotIn("TPL-TAIL", offered)
 
     def test_another_merchants_template_is_not_offered(self):
@@ -281,21 +281,21 @@ class DisplayPackingTests(TestCase):
         mine.merchant = other
         mine.save()
 
-        offered = {row["code"] for row in services.applicable_templates(self.order)}
+        offered = {row["code"] for row in services.applicable_templates(self.order, self.store.id)}
         self.assertNotIn("TPL-MINE", offered)
 
     # ── Remaining follows the cartons, not the steps ─────────────────
 
     def test_a_hand_edited_carton_moves_the_remainder(self):
-        services.apply_step(self.order, self.t1, count=1)
-        before = services.remaining_quantities(self.order)[(self.bow.id, None)]
+        services.apply_step(self.order, self.t1, self.store, count=1)
+        before = services.remaining_quantities(self.order)[(self.store.id, self.bow.id, None)]
 
         carton = self.order.cartons.get()
         content = carton.contents.get(product=self.bow)
         content.quantity += 5
         content.save()
 
-        after = services.remaining_quantities(self.order)[(self.bow.id, None)]
+        after = services.remaining_quantities(self.order)[(self.store.id, self.bow.id, None)]
         self.assertEqual(before - after, 5)
 
 
@@ -379,7 +379,11 @@ class OrderLineStoreTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("lines", response.data)
 
-    def test_reconciliation_counts_a_product_once_across_stores(self):
+    def test_reconciliation_keeps_the_stores_apart(self):
+        """
+        Twenty-four wreaths in Portland do nothing for Austin, so the same
+        product ordered by two stores is two rows, not one total.
+        """
         order = DisplayOrder.objects.create(name="Split", merchant=self.merchant)
         for outlet, quantity in ((self.portland, 24), (self.austin, 18)):
             DisplayOrderLine.objects.create(
@@ -387,8 +391,13 @@ class OrderLineStoreTests(APITestCase):
             )
 
         rows = services.reconcile(order)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].ordered, 42)
+        self.assertEqual(
+            {(row.store_code, row.ordered) for row in rows},
+            {("118", 24), ("204", 18)},
+        )
+
+        scoped = services.reconcile(order, self.portland.id)
+        self.assertEqual([row.ordered for row in scoped], [24])
 
     def test_a_store_with_order_lines_cannot_be_deleted(self):
         self.client.post(
@@ -399,6 +408,92 @@ class OrderLineStoreTests(APITestCase):
         # PROTECT — the store is the address those cartons ship to.
         with self.assertRaises(Exception):
             self.portland.delete()
+
+
+class StorePackingTests(TestCase):
+    """
+    A carton never holds two stores' goods, so the greedy loop runs inside a
+    store. Demand cannot be pooled and a step belongs to one destination.
+    """
+
+    def setUp(self):
+        self.merchant = Merchant.objects.create(code="ANT", name="Anthropologie")
+        self.portland = store(self.merchant, "118")
+        self.austin = store(self.merchant, "204")
+        self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))
+
+        self.order = DisplayOrder.objects.create(name="Split", merchant=self.merchant)
+        for outlet, quantity in ((self.portland, 30), (self.austin, 30)):
+            DisplayOrderLine.objects.create(
+                order=self.order, store=outlet, product=self.bow, quantity=quantity
+            )
+
+        self.box60 = template("TPL-60", [(self.bow, 60)])
+        self.box30 = template("TPL-30", [(self.bow, 30)])
+
+    def test_demand_is_never_pooled_across_stores(self):
+        """
+        Sixty bows are ordered but split thirty apiece, so a sixty-per-box
+        design fits nobody — the pooled total is a number no carton can use.
+        """
+        self.assertEqual(
+            services.max_applications(
+                self.box60, services.store_remaining(self.order, self.portland.id)
+            ),
+            0,
+        )
+        with self.assertRaises(services.PackingError):
+            services.apply_step(self.order, self.box60, self.portland)
+
+    def test_a_design_is_only_offered_where_it_fits(self):
+        offered = {
+            row["code"]
+            for row in services.applicable_templates(self.order, self.portland.id)
+        }
+        self.assertEqual(offered, {"TPL-30"})
+
+    def test_packing_one_store_leaves_the_other_untouched(self):
+        services.apply_step(self.order, self.box30, self.portland, count=1)
+
+        remaining = services.remaining_quantities(self.order)
+        self.assertNotIn((self.portland.id, self.bow.id, None), remaining)
+        self.assertEqual(remaining[(self.austin.id, self.bow.id, None)], 30)
+
+    def test_cartons_and_steps_carry_their_store(self):
+        step = services.apply_step(self.order, self.box30, self.austin, count=1)
+
+        self.assertEqual(step.store_id, self.austin.id)
+        self.assertEqual(
+            list(self.order.cartons.values_list("store_id", flat=True)),
+            [self.austin.id],
+        )
+
+    def test_carton_numbers_run_on_across_stores(self):
+        """One shipment, one run of numbers — the store is a label, not a reset."""
+        services.apply_step(self.order, self.box30, self.portland, count=1)
+        services.apply_step(self.order, self.box30, self.austin, count=1)
+
+        self.assertEqual(
+            list(self.order.cartons.values_list("carton_no", flat=True)),
+            ["CTN-001", "CTN-002"],
+        )
+
+    def test_the_summary_reports_each_store_separately(self):
+        services.apply_step(self.order, self.box30, self.portland, count=1)
+
+        rows = {row["store_code"]: row for row in services.store_summaries(self.order)}
+        self.assertTrue(rows["118"]["is_done"])
+        self.assertEqual(rows["118"]["carton_count"], 1)
+        self.assertFalse(rows["204"]["is_done"])
+        self.assertEqual(rows["204"]["remaining"], 30)
+
+    def test_a_plan_scoped_to_a_store_shows_only_its_steps(self):
+        services.apply_step(self.order, self.box30, self.portland, count=1)
+        services.apply_step(self.order, self.box30, self.austin, count=1)
+
+        plan = services.packing_summary(self.order, self.portland.id)
+        self.assertEqual([row.store_code for row in plan["steps"]], ["118"])
+        self.assertEqual(len(services.packing_summary(self.order)["steps"]), 2)
 
 
 class DisplayOrderNumberTests(TestCase):
@@ -528,10 +623,11 @@ class PieceCountingTests(TestCase):
             product=self.table, name="Legs", product_weight_kg=Decimal("2.1"), sort_order=1
         )
 
+        self.store = store(merchant)
         self.order = DisplayOrder.objects.create(name="Test", merchant=merchant)
         DisplayOrderLine.objects.create(
             order=self.order,
-            store=store(merchant),
+            store=self.store,
             product=self.table,
             quantity=10,
         )
@@ -540,6 +636,7 @@ class PieceCountingTests(TestCase):
         """Put some of one part in a carton of its own."""
         carton = DisplayCarton.objects.create(
             order=self.order,
+            store=self.store,
             carton_no=f"CTN-{self.order.cartons.count() + 1:03d}",
             length_in=Decimal("40"),
             width_in=Decimal("20"),
@@ -555,8 +652,8 @@ class PieceCountingTests(TestCase):
             services.ordered_quantities(self.order),
             Counter(
                 {
-                    (self.table.id, self.top.id): 10,
-                    (self.table.id, self.legs.id): 10,
+                    (self.store.id, self.table.id, self.top.id): 10,
+                    (self.store.id, self.table.id, self.legs.id): 10,
                 }
             ),
         )
@@ -567,7 +664,7 @@ class PieceCountingTests(TestCase):
 
         remaining = services.remaining_quantities(self.order)
 
-        self.assertEqual(remaining, {(self.table.id, self.legs.id): 2})
+        self.assertEqual(remaining, {(self.store.id, self.table.id, self.legs.id): 2})
         self.assertEqual(
             [row["description"] for row in services.remaining_rows(self.order)],
             ["Display Table — Legs"],

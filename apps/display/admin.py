@@ -126,8 +126,9 @@ class DisplayOrderLineInline(admin.TabularInline):
 class PackStepInline(admin.TabularInline):
     model = PackStep
     extra = 0
-    fields = ("sequence", "template", "count")
+    fields = ("sequence", "store", "template", "count")
     readonly_fields = ("sequence",)
+    autocomplete_fields = ("store",)
 
 
 @admin.register(DisplayOrder)
@@ -167,13 +168,14 @@ class DisplayCartonAdmin(admin.ModelAdmin):
     list_display = (
         "carton_no",
         "order",
+        "store",
         "template_code",
         "size",
         "net_weight_kg",
         "gross_weight_kg",
         "cbm",
     )
-    list_filter = ("order",)
+    list_filter = ("order", "store")
     search_fields = ("carton_no", "order__number")
     inlines = [DisplayCartonContentInline]
 

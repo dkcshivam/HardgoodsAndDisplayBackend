@@ -45,7 +45,9 @@ class PackTemplateViewSet(viewsets.ModelViewSet):
 class DisplayOrderViewSet(viewsets.ModelViewSet):
     queryset = (
         DisplayOrder.objects.select_related("merchant")
-        .prefetch_related("lines__product", "lines__store", "steps__template")
+        .prefetch_related(
+            "lines__product", "lines__store", "steps__template", "steps__store"
+        )
         .all()
     )
     serializer_class = DisplayOrderSerializer
@@ -61,18 +63,24 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
         Steps, what is left, and which templates still fit. Deliberately not
         the cartons — a finished plan runs to thousands, and the screen works
         in steps.
+
+        `?store=` narrows the plan to one store; without it the response
+        carries the per-store overview and nothing store-specific.
         """
-        return Response(self._plan(self.get_object()))
+        order = self.get_object()
+        return Response(self._plan(order, self._requested_store(request, order)))
 
     @action(detail=True, methods=["get"])
     def cartons(self, request, pk=None):
         """The boxes themselves, paginated — the drill-down from a step."""
         order = self.get_object()
-        queryset = order.cartons.select_related("step__template").prefetch_related(
-            "contents__product", "contents__part"
-        )
+        queryset = order.cartons.select_related(
+            "step__template", "store"
+        ).prefetch_related("contents__product", "contents__part")
         if (sequence := request.query_params.get("step")) is not None:
             queryset = queryset.filter(step__sequence=sequence)
+        if (store := request.query_params.get("store")) is not None:
+            queryset = queryset.filter(store_id=store)
 
         page = self.paginate_queryset(queryset)
         serializer = DisplayCartonSerializer(page, many=True)
@@ -94,17 +102,25 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
         payload = ApplyStepSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
 
+        store = payload.validated_data["store"]
+        if not order.lines.filter(store=store).exists():
+            return Response(
+                {"detail": f"Store {store.code} is not on this order."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             services.apply_step(
                 order,
                 payload.validated_data["template"],
+                store,
                 payload.validated_data.get("count"),
             )
         except services.PackingError as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
         self._advance_from_draft(order)
-        return Response(self._plan(order))
+        return Response(self._plan(order, store.id))
 
     @action(
         detail=True,
@@ -139,7 +155,7 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
 
         return Response(
             {
-                **self._plan(order),
+                **self._plan(order, self._requested_store(request, order)),
                 "adjustments": AdjustmentSerializer(adjustments, many=True).data,
             }
         )
@@ -179,5 +195,23 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
             order.save(update_fields=["status", "updated_at"])
 
     @staticmethod
-    def _plan(order):
-        return PackingPlanSerializer(services.packing_summary(order)).data
+    def _plan(order, store_id=None):
+        return PackingPlanSerializer(
+            services.packing_summary(order, store_id)
+        ).data
+
+    def _requested_store(self, request, order):
+        """
+        Which store the caller is working in. Unknown or foreign ids fall back
+        to the whole order rather than quietly showing another store's plan.
+        """
+        raw = request.query_params.get("store")
+        if not raw:
+            return None
+        try:
+            store_id = int(raw)
+        except ValueError:
+            return None
+        return store_id if any(
+            line.store_id == store_id for line in order.lines.all()
+        ) else None

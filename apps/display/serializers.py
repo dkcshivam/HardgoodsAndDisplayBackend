@@ -1,6 +1,8 @@
 from django.db import transaction
 from rest_framework import serializers
 
+from apps.masters.models import Store
+
 from .models import (
     DisplayCarton,
     DisplayCartonContent,
@@ -450,6 +452,8 @@ class DisplayCartonSerializer(serializers.ModelSerializer):
     template_code = serializers.CharField(
         source="step.template.code", default=None, read_only=True
     )
+    store_code = serializers.CharField(source="store.code", read_only=True)
+    store_name = serializers.CharField(source="store.name", read_only=True)
 
     class Meta:
         model = DisplayCarton
@@ -457,6 +461,9 @@ class DisplayCartonSerializer(serializers.ModelSerializer):
             "id",
             "carton_no",
             "step",
+            "store",
+            "store_code",
+            "store_name",
             "template_code",
             "length_in",
             "width_in",
@@ -475,6 +482,9 @@ class DisplayCartonSerializer(serializers.ModelSerializer):
 
 
 class QuantityRowSerializer(serializers.Serializer):
+    store = serializers.IntegerField()
+    store_code = serializers.CharField(allow_blank=True)
+    store_name = serializers.CharField(allow_blank=True)
     product = serializers.IntegerField()
     part = serializers.IntegerField(allow_null=True)
     style_no = serializers.CharField()
@@ -485,6 +495,9 @@ class QuantityRowSerializer(serializers.Serializer):
 
 class StepRowSerializer(serializers.Serializer):
     sequence = serializers.IntegerField()
+    store = serializers.IntegerField()
+    store_code = serializers.CharField()
+    store_name = serializers.CharField()
     template = serializers.IntegerField()
     template_code = serializers.CharField()
     template_name = serializers.CharField()
@@ -492,6 +505,17 @@ class StepRowSerializer(serializers.Serializer):
     carton_count = serializers.IntegerField()
     consumed = QuantityRowSerializer(many=True)
     remaining_after = QuantityRowSerializer(many=True)
+
+
+class StoreProgressSerializer(serializers.Serializer):
+    store = serializers.IntegerField()
+    store_code = serializers.CharField()
+    store_name = serializers.CharField()
+    ordered = serializers.IntegerField()
+    packed = serializers.IntegerField()
+    remaining = serializers.IntegerField()
+    carton_count = serializers.IntegerField()
+    is_done = serializers.BooleanField()
 
 
 class ApplicableTemplateSerializer(serializers.Serializer):
@@ -503,6 +527,8 @@ class ApplicableTemplateSerializer(serializers.Serializer):
 
 
 class ReconciliationSerializer(serializers.Serializer):
+    store = serializers.IntegerField()
+    store_code = serializers.CharField()
     product = serializers.IntegerField()
     style_no = serializers.CharField()
     ordered = serializers.IntegerField()
@@ -518,6 +544,8 @@ class SignalSerializer(serializers.Serializer):
 
 class PackingPlanSerializer(serializers.Serializer):
     order = serializers.IntegerField()
+    store = serializers.IntegerField(allow_null=True)
+    stores = StoreProgressSerializer(many=True)
     steps = StepRowSerializer(many=True)
     remaining = QuantityRowSerializer(many=True)
     applicable_templates = ApplicableTemplateSerializer(many=True)
@@ -533,6 +561,7 @@ class PackingPlanSerializer(serializers.Serializer):
 
 class ApplyStepSerializer(serializers.Serializer):
     template = serializers.PrimaryKeyRelatedField(queryset=PackTemplate.objects.all())
+    store = serializers.PrimaryKeyRelatedField(queryset=Store.objects.all())
     # Omit to apply the template as many times as it fits — the common case.
     count = serializers.IntegerField(required=False, allow_null=True, min_value=1)
 

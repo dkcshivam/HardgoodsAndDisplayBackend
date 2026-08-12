@@ -428,6 +428,11 @@ class PackStep(models.Model):
 
     order = models.ForeignKey(DisplayOrder, on_delete=models.CASCADE, related_name="steps")
     sequence = models.PositiveIntegerField()
+    # A carton is never shared between two stores, so a step packs for exactly
+    # one of them and the greedy loop runs inside that boundary.
+    store = models.ForeignKey(
+        "masters.Store", on_delete=models.PROTECT, related_name="pack_steps"
+    )
     template = models.ForeignKey(
         PackTemplate, on_delete=models.PROTECT, related_name="steps"
     )
@@ -461,6 +466,11 @@ class DisplayCarton(models.Model):
 
     order = models.ForeignKey(
         DisplayOrder, on_delete=models.CASCADE, related_name="cartons"
+    )
+    # Held here rather than read through the step, because a step can be
+    # cleared away and a box still has to know where it is going.
+    store = models.ForeignKey(
+        "masters.Store", on_delete=models.PROTECT, related_name="display_cartons"
     )
     carton_no = models.CharField(max_length=32, help_text="e.g. CTN-001")
 
