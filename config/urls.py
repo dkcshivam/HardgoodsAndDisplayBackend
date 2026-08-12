@@ -10,13 +10,14 @@ from apps.display.views import (
     DisplayProductViewSet,
     PackTemplateViewSet,
 )
-from apps.masters.views import CategoryViewSet, MerchantViewSet
+from apps.masters.views import CategoryViewSet, MerchantViewSet, StoreViewSet
 from apps.orders.views import OrderViewSet
 
 router = DefaultRouter()
 
 router.register("categories", CategoryViewSet)
 router.register("merchants", MerchantViewSet)
+router.register("stores", StoreViewSet)
 router.register("products", ProductViewSet)
 router.register("product-images", ProductImageViewSet)
 router.register("orders", OrderViewSet)

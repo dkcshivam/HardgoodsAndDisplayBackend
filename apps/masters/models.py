@@ -39,3 +39,47 @@ class Merchant(TimeStampedModel):
 
     def __str__(self):
         return f"{self.code} · {self.name}"
+
+
+class Store(TimeStampedModel):
+    """
+    One outlet of a merchant — the address a carton is actually addressed to.
+
+    The merchant buys, the store receives. A display order is split across
+    many of these, and because a carton is never shared between two stores,
+    this is the boundary the packing loop runs inside.
+    """
+
+    merchant = models.ForeignKey(
+        Merchant, on_delete=models.PROTECT, related_name="stores"
+    )
+    code = models.CharField(max_length=32, help_text="The merchant's own store number")
+    name = models.CharField(max_length=180)
+
+    contact_name = models.CharField(max_length=120, blank=True)
+    email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=40, blank=True)
+
+    ship_line1 = models.CharField(max_length=180, blank=True)
+    ship_line2 = models.CharField(max_length=180, blank=True)
+    ship_city = models.CharField(max_length=80, blank=True)
+    ship_state = models.CharField(max_length=80, blank=True)
+    ship_postal_code = models.CharField(max_length=20, blank=True)
+    ship_country = models.CharField(
+        max_length=2, default="US", help_text="ISO code, e.g. US"
+    )
+
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["merchant__name", "code"]
+        constraints = [
+            # Store numbers are the merchant's own, so they need only be
+            # unique within that merchant — two chains may both have a "118".
+            models.UniqueConstraint(
+                fields=["merchant", "code"], name="unique_store_code_per_merchant"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.code} · {self.name}"
