@@ -46,14 +46,13 @@ level, no invoicing. Every attribute in the catalogue answers one question:
 
 ## 2. Scope
 
-**In scope now:** the Hardgoods module — furniture and homeware.
+**In scope now:** the Hardgoods module — furniture and homeware — and the
+Display module — store decor and small goods. Display differs structurally
+enough to be its own Django app with its own tables, sharing only the
+arithmetic in `apps/common`. Fully described in §10.
 
-**Specified, not built:** the Display module — store decor and small goods. It
-differs structurally enough to be its own Django app with its own tables,
-sharing only the arithmetic in `apps/common`. Fully described in §10.
-
-**Not yet designed:** authentication and roles, packing-list document generation,
-photo editing beyond upload and set-main.
+**Not yet designed:** authentication and roles, photo editing beyond upload and
+set-main, photos for display products.
 
 ---
 
@@ -170,6 +169,14 @@ Nine tables in three groups, mirroring `apps/`.
 
 **Merchant** — `code`(unique) · `name` · `contact_name` · `email` · `phone` ·
 `city` · `country` · `is_active`
+
+**Store** — `merchant`→ · `code` · `name` · `contact_name` · `email` · `phone` ·
+`ship_{line1,line2,city,state,postal_code,country}` · `is_active`
+
+One outlet of a merchant: the merchant buys, the store receives. `code` is the
+merchant's own store number and is unique **within that merchant** only — two
+chains may both number a store 118. Used by Display (§10.4.2); a Hardgoods
+order still carries a single ship-to address of its own.
 
 ### catalog
 
@@ -505,7 +512,7 @@ a photo from the device camera, captured in the app.
 The packing screen carries a **Packing list** button that downloads the Excel
 document described in §7.
 
-### Display (specified in §10, not built)
+### Display (§10)
 
 | # | Screen | Status |
 |---|---|---|
@@ -513,18 +520,34 @@ document described in §7.
 | 14 | Display Product — form | ✅ Built |
 | 15 | Pack Templates — library list | ✅ Built |
 | 16 | Display Orders — list | ✅ Built |
-| 17 | Display Order — create (details → ship-to → products) | ✅ Built |
-| 18 | Display Packing — the step loop | ✅ Built |
+| 17 | Display Order — create (details → stores → per-store demand) | ✅ Built |
+| 18 | Display Packing — store overview, then the step loop | ✅ Built |
 | 19 | Template editor — authored in-flow against remaining demand | ✅ Built |
+| 20 | Stores — list and form, under Admin | ✅ Built |
 
-Screens 14 and 17 mirror their Hardgoods counterparts closely; 18 and 19 are new
-shapes. The store picker and product × store matrix from the original mockups are
-gone — a Display order line is `{product, quantity}`, exactly as in Hardgoods.
+**The store picker came back.** An earlier revision of this document recorded
+that the product × store matrix from the original mockups had been dropped and
+a display line was plain `{product, quantity}`. That was wrong about the
+business: a display order is one PO for many outlets, and §10.4.2 is the
+correction. The mockups' *matrix* is still gone — at fifty stores and thirty
+products it is thirteen hundred mostly-empty cells — replaced on screen 17 by:
 
-Screen 18 lists **steps**, not cartons: each row is a template, its count, what
-it consumed and what remained. Remaining demand leads the page, since it is what
-the next template gets authored against; a step's carton count opens the
-drill-down, which reads the paginated `cartons/` endpoint.
+- a checkbox list choosing which stores are on the order,
+- a **bulk fill** (`product` × `qty` → *Fill all N stores*) for the uniform
+  case, which is most of them,
+- a per-store editor for the exceptions, with a running count of stores still
+  empty, since a forgotten store is the easy mistake to make.
+
+Screen 18 opens on the **store overview** — every store with its packed/ordered
+count and carton count — because at fifty stores the first question is which
+ones are unfinished, not what to pack next. Choosing one narrows to the step
+loop below.
+
+That loop lists **steps**, not cartons: each row is a template, its count, what
+it consumed and what remained. Remaining demand leads the section, since it is
+what the next template gets authored against; a step's carton count opens the
+drill-down, which reads the paginated `cartons/` endpoint. Once a store is
+packed, the screen offers to copy its plan to every identical unpacked store.
 
 Screen 19 is one dialog (`components/display/template-dialog.tsx`) used from both
 the library page and the packing screen. Opened from packing it receives the
@@ -591,13 +614,15 @@ itself in a single response.
 |---|---|---|
 | `/display-products/` | CRUD | own catalogue; no box, no parts |
 | `/pack-templates/` | CRUD | items written in the same request; `?is_library=true` for the picker |
-| `/display-orders/` | CRUD | nested `lines`, `shipping_address` — same shape as `/orders/` |
-| `/display-orders/{id}/packing/` | GET | steps, remaining, applicable templates, reconciliation, blockers, warnings, totals |
-| `/display-orders/{id}/cartons/` | GET | the boxes, paginated; `?step=N` for one step's run |
-| `/display-orders/{id}/steps/` | POST | apply a template; `count` defaults to the computed maximum |
+| `/stores/` | CRUD | outlets under a merchant; `?merchant=` for one chain's |
+| `/display-orders/` | CRUD | nested `lines`, each naming a `store` |
+| `/display-orders/{id}/packing/` | GET | `stores` overview always; `?store=` adds that store's steps, remaining, applicable templates, reconciliation and copy targets |
+| `/display-orders/{id}/cartons/` | GET | the boxes, paginated; `?step=N` or `?store=N` |
+| `/display-orders/{id}/steps/` | POST | apply a template to one `store`; `count` defaults to the computed maximum |
 | `/display-orders/{id}/steps/{seq}/` | PATCH, DELETE | re-count or drop a step; replays everything after it and returns `adjustments` |
+| `/display-orders/{id}/replicate/` | POST | copy one `store`'s steps onto every identical unpacked store (§10.4.2) |
 | `/display-orders/{id}/advance-status/` | POST | as Hardgoods |
-| `/display-orders/{id}/packing-list/` | GET | **not built** — `.xlsx`, merged per §10.8 |
+| `/display-orders/{id}/packing-list/` | GET | `.xlsx`, blocked by store per §10.8 |
 
 `POST /steps/` without a `count` applies the maximum — the common case, and the
 one that makes the loop a single click per template.
@@ -718,9 +743,16 @@ replaces rather than merges.
           ▲                                       ▲
           │                                       │
    DisplayOrderLine ──▶ DisplayOrder ──▶ PackStep ┘
-                              │              │
-                              └──▶ DisplayCarton ──▶ DisplayCartonContent
+          │                   │              │
+          │                   └──▶ DisplayCarton ──▶ DisplayCartonContent
+          │                                 │
+          └────────▶ masters.Store ◀────────┘
+                          ▲
+                          └──── PackStep
 ```
+
+Every one of `DisplayOrderLine`, `PackStep` and `DisplayCarton` names a store.
+That is not denormalisation for speed — see §10.4.2.
 
 **DisplayProduct** — `style_no`(unique) · `description` · `category`→ ·
 `customs_description` · `hsn_code` · `is_multi_part` · `status` ·
@@ -748,9 +780,10 @@ step and carton already written against that style number assumed one shape.
 
 ### 10.4.1 Pieces
 
-The unit the loop counts is a **piece**: `(product, part)`, where `part` is null
-for a single-piece product. `PackTemplateItem` and `DisplayCartonContent` both
-carry a nullable `part`, and every count in `services.py` is keyed by the pair.
+The unit the loop counts is a **piece**: `(store, product, part)`, where `part`
+is null for a single-piece product. `PackTemplateItem` and
+`DisplayCartonContent` both carry a nullable `part`, and every count in
+`services.py` is keyed by the triple.
 
 Ordering ten trees is therefore a demand for ten panel sets **and** ten posts,
 each of which must find a box, and they need not find the same one.
@@ -760,9 +793,45 @@ capped by the panels alone. Counting by product would let a box of panels
 consume demand that only the posts can satisfy, and the order would read as
 packed while half of every tree sat on the floor.
 
+*Why the store is in the key:* §10.4.2. In short, thirty bows in Portland can
+never fill a box bound for Austin, so the two demands must not be summed.
+
 `PackTemplateItem` is unique on `(template, product, part)` with
 `nulls_distinct=False` — without that, Postgres treats every whole-product row
-as distinct from every other and the rule never bites.
+as distinct from every other and the rule never bites. It carries **no** store:
+a template is a box design, reusable by any store that happens to fit it.
+
+### 10.4.2 Stores
+
+A display order is one purchase order split across many outlets — a retailer
+buys six hundred wreaths for fifty stores on one PO. So `DisplayOrderLine` is
+`(order, store, product)`, unique on that triple, and stores need not share a
+product mix: one may take wreaths and trees, its neighbour only wreaths.
+
+**One carton never holds two stores' goods.** Everything else follows from that
+single rule:
+
+- `PackStep` names a store. A step packs for one destination.
+- `DisplayCarton` names a store too, rather than reading it through the step,
+  because `step` is nullable (`SET_NULL`) and a hand-built box still has to
+  know where it is going.
+- The greedy loop of §10.2 runs **inside** a store. `max_applications` is given
+  one store's leftovers; `applicable_templates` is offered per store.
+- Demand is never pooled. Sixty bows split thirty apiece means a
+  sixty-per-box design fits *nobody* — and it must be refused, because the
+  pooled total describes a carton that cannot legally exist.
+
+Store *codes* belong to the merchant, not to us, so uniqueness is per merchant
+(§5). `PROTECT` on every reference: a store with lines or cartons cannot be
+deleted, because it is the address those boxes ship to.
+
+**Replicating a plan.** Most of a fifty-store order wants the identical thing,
+so packing one store and copying it is the difference between three clicks and
+a hundred and fifty. `replicate_plan(order, source)` copies the source store's
+steps onto every store whose demand matches it exactly **and** which has
+nothing packed yet. A part-packed store is skipped rather than topped up —
+copying onto work somebody has already started would mean guessing what they
+meant.
 
 **PackTemplate** — `code`(unique) · `name` · `merchant`→(null = global) ·
 `order`→(nullable) · `remark` · `is_library` · `is_active` ·
@@ -858,6 +927,11 @@ Continuous across the order: `CTN-001`, `CTN-002`, … assigned in step order, s
 each step owns one unbroken run. That keeps the packing list's ranges plain
 rather than a rule to decode, for the reason given in §7.
 
+**The store is a label on the carton, not a reset of the sequence.** One
+shipment gets one run of numbers, whichever store each box is bound for. Per
+store numbering would give a shipment fifty `CTN-001`s, and the first
+duplicate is the first miscount.
+
 **Numbers are never reassigned.** Editing step 4 rebuilds the cartons from step 4
 onward, and they continue from the highest number still standing; everything
 before keeps the number already written on the box. Deleting a middle step
@@ -872,11 +946,17 @@ artefact nobody writes on a box.
 
 ### 10.7 Reconciliation and blockers
 
-Reconciliation is per order line. A single-piece product is a plain sum of its
-content quantities. A multi-part product counts each part separately and takes
-the **minimum**, exactly as D3 does for Hardgoods: twenty panel sets and
+Reconciliation is per store and product. A single-piece product is a plain sum
+of its content quantities. A multi-part product counts each part separately and
+takes the **minimum**, exactly as D3 does for Hardgoods: twenty panel sets and
 eighteen posts is eighteen trees, not nineteen. That is both true and
 actionable — go and find two posts.
+
+One product ordered by two stores is **two rows**, not one total: twenty-four
+wreaths in Portland say nothing about Austin, and a combined figure would read
+as fine while one store sat empty. `quantity_mismatch` names the store for the
+same reason — an unfinished store has to be findable, not merely implied by a
+wrong total.
 
 All five Hardgoods blockers apply unchanged — `missing_carton_no`,
 `duplicate_carton_no`, `missing_dimensions`, `gross_below_net`,
@@ -909,11 +989,33 @@ ships 55 cartons. That
 is the same document a customs officer already reads, and it is why steps are
 the right unit of planning as well as of editing.
 
+**Blocked by store.** Each store opens with a banner carrying its name and
+address, carries its own rows, and closes with its own subtotal; the order
+total comes last. That is the shape the sheet is *used* in — the warehouse
+picks a pallet per store, not per order.
+
+The grouping, the carton-range notation and the column layout are shared with
+Hardgoods in `apps/common/packing_sheet.py`. Only the blocking is particular to
+Display. A shipping desk reading one document after the other should not have
+to learn two conventions.
+
+The order total sums the store blocks **by naming each range**, not by spanning
+them: a single span would cross the subtotal rows and count every carton twice.
+Totals are written as formulas rather than values so the sheet stays true if
+somebody edits a quantity after it leaves here — which is exactly why the
+double-count would otherwise have survived a proofread.
+
 ### 10.9 Still open
 
 - Photos for display products — the `ProductImage` owner constraint is a CHECK
   over `product`/`part` and would need a third owner, or its own table.
-- Excel import of the order lines.
+- Excel import of the order lines. Typing a fifty-store grid by hand is the
+  obvious next bottleneck now that the bulk-fill covers only the uniform case.
+- Whether a display order still needs its own ship-to address. The columns are
+  retained but unused: stores carry the addresses, and the order-level block no
+  longer appears on the entry form. It may yet earn its keep as a bill-to.
+- A per-store packing list as a separate document, if a store's copy has to
+  travel with its own pallet rather than the whole sheet going to customs.
 - Whether a template may be edited after an order has used it. The provenance
   link would then misdescribe boxes already shipped — the same hazard as
   `is_multi_part`, and it probably wants the same answer.
