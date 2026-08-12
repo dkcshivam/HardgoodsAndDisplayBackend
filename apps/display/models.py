@@ -387,8 +387,16 @@ class DisplayOrder(TimeStampedModel):
 
 
 class DisplayOrderLine(models.Model):
+    """
+    What one store wants, of one product. A store may take a different set of
+    products from its neighbour, so the mix is per line, not per order.
+    """
+
     order = models.ForeignKey(
         DisplayOrder, on_delete=models.CASCADE, related_name="lines"
+    )
+    store = models.ForeignKey(
+        "masters.Store", on_delete=models.PROTECT, related_name="display_order_lines"
     )
     product = models.ForeignKey(
         DisplayProduct, on_delete=models.PROTECT, related_name="order_lines"
@@ -397,16 +405,16 @@ class DisplayOrderLine(models.Model):
     color = models.CharField(max_length=60, blank=True)
 
     class Meta:
-        ordering = ["id"]
+        ordering = ["store__code", "id"]
         constraints = [
             models.UniqueConstraint(
-                fields=["order", "product"],
-                name="one_display_line_per_product_per_order",
+                fields=["order", "store", "product"],
+                name="one_display_line_per_product_per_store",
             )
         ]
 
     def __str__(self):
-        return f"{self.product.style_no} × {self.quantity}"
+        return f"{self.store.code} · {self.product.style_no} × {self.quantity}"
 
 
 class PackStep(models.Model):

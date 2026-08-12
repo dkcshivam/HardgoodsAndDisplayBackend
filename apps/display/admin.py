@@ -119,8 +119,8 @@ class PackTemplateAdmin(admin.ModelAdmin):
 class DisplayOrderLineInline(admin.TabularInline):
     model = DisplayOrderLine
     extra = 0
-    fields = ("product", "color", "quantity")
-    autocomplete_fields = ("product",)
+    fields = ("store", "product", "color", "quantity")
+    autocomplete_fields = ("store", "product")
 
 
 class PackStepInline(admin.TabularInline):

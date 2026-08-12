@@ -45,7 +45,7 @@ class PackTemplateViewSet(viewsets.ModelViewSet):
 class DisplayOrderViewSet(viewsets.ModelViewSet):
     queryset = (
         DisplayOrder.objects.select_related("merchant")
-        .prefetch_related("lines__product", "steps__template")
+        .prefetch_related("lines__product", "lines__store", "steps__template")
         .all()
     )
     serializer_class = DisplayOrderSerializer

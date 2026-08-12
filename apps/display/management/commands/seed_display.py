@@ -21,7 +21,7 @@ from apps.display.models import (
     PackTemplate,
     PackTemplateItem,
 )
-from apps.masters.models import Category, Merchant
+from apps.masters.models import Category, Merchant, Store
 
 
 def d(value) -> Decimal:
@@ -81,6 +81,19 @@ PART_PRODUCTS = [
 ]
 
 
+# The outlets an order gets split across.
+# code, name, city, state, postcode
+STORES = [
+    ("118", "Portland Pearl", "900 SE Water Ave", "Portland", "OR", "97214"),
+    ("204", "Austin Domain", "11800 Domain Blvd", "Austin", "TX", "78758"),
+    ("331", "Brooklyn Williamsburg", "62 N 6th St", "Brooklyn", "NY", "11249"),
+    ("407", "Chicago Lincoln Park", "1500 N Halsted St", "Chicago", "IL", "60642"),
+    ("512", "Seattle University Village", "2623 NE University Village St",
+     "Seattle", "WA", "98105"),
+    ("628", "Denver Cherry Creek", "2800 E 1st Ave", "Denver", "CO", "80206"),
+]
+
+
 class Command(BaseCommand):
     help = "Load a clean Display product catalogue — no templates, no orders."
 
@@ -98,14 +111,29 @@ class Command(BaseCommand):
 
         category, _ = Category.objects.get_or_create(name="Decor")
 
-        if not Merchant.objects.filter(code="TRN").exists():
-            Merchant.objects.create(
-                code="TRN",
-                name="Terrain Home",
-                contact_name="Marco Reyes",
-                email="marco@terrain.com",
-                city="Portland",
-                country="US",
+        merchant, _ = Merchant.objects.get_or_create(
+            code="TRN",
+            defaults={
+                "name": "Terrain Home",
+                "contact_name": "Marco Reyes",
+                "email": "marco@terrain.com",
+                "city": "Portland",
+                "country": "US",
+            },
+        )
+
+        for code, name, line1, city, state, postcode in STORES:
+            Store.objects.get_or_create(
+                merchant=merchant,
+                code=code,
+                defaults={
+                    "name": name,
+                    "ship_line1": line1,
+                    "ship_city": city,
+                    "ship_state": state,
+                    "ship_postal_code": postcode,
+                    "ship_country": "US",
+                },
             )
 
         for style_no, description, customs, hsn, weight, length, width, height in PRODUCTS:
@@ -147,6 +175,7 @@ class Command(BaseCommand):
             f"  {total_products} products ({len(PART_PRODUCTS)} multi-part, "
             f"{len(PRODUCTS)} single-part)"
         )
+        self.stdout.write(f"  {len(STORES)} stores under {merchant.name}")
         self.stdout.write(self.style.SUCCESS(
             "Display catalogue loaded — no templates or orders. Build those yourself."
         ))

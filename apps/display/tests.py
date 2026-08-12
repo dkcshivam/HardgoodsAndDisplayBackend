@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.test import TestCase
 from rest_framework.test import APITestCase
 
-from apps.masters.models import Merchant
+from apps.masters.models import Merchant, Store
 
 from . import services
 from .models import (
@@ -31,6 +31,10 @@ def product(style_no, weight, size):
     )
 
 
+def store(merchant, code="MAIN"):
+    return Store.objects.create(merchant=merchant, code=code, name=f"Store {code}")
+
+
 def template(code, items, box=(28, 20, 16), box_kg=0.8, packing_kg=0.25):
     length, width, height = box
     tpl = PackTemplate.objects.create(
@@ -51,6 +55,7 @@ def template(code, items, box=(28, 20, 16), box_kg=0.8, packing_kg=0.25):
 class DisplayPackingTests(TestCase):
     def setUp(self):
         self.merchant = Merchant.objects.create(code="TRN", name="Terrain Home")
+        self.store = store(self.merchant)
 
         self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))
         self.orn = product("DSP-ORN-06", 0.55, (9, 6, 3))
@@ -65,7 +70,7 @@ class DisplayPackingTests(TestCase):
             (self.grl, 158),
         ):
             DisplayOrderLine.objects.create(
-                order=self.order, product=prod, quantity=quantity
+                order=self.order, store=self.store, product=prod, quantity=quantity
             )
 
         self.t1 = template(
@@ -164,7 +169,9 @@ class DisplayPackingTests(TestCase):
 
     def test_recount_clamps_a_starved_later_step_and_reports_it(self):
         small = DisplayOrder.objects.create(name="Small", merchant=self.merchant)
-        DisplayOrderLine.objects.create(order=small, product=self.bow, quantity=10)
+        DisplayOrderLine.objects.create(
+            order=small, store=self.store, product=self.bow, quantity=10
+        )
         a = template("TPL-A", [(self.bow, 5)])
         b = template("TPL-B", [(self.bow, 5)])
 
@@ -261,7 +268,9 @@ class DisplayPackingTests(TestCase):
         tail.save()
 
         other = DisplayOrder.objects.create(name="Other", merchant=self.merchant)
-        DisplayOrderLine.objects.create(order=other, product=self.grl, quantity=50)
+        DisplayOrderLine.objects.create(
+            order=other, store=self.store, product=self.grl, quantity=50
+        )
 
         offered = {row["code"] for row in services.applicable_templates(other)}
         self.assertNotIn("TPL-TAIL", offered)
@@ -288,6 +297,97 @@ class DisplayPackingTests(TestCase):
 
         after = services.remaining_quantities(self.order)[(self.bow.id, None)]
         self.assertEqual(before - after, 5)
+
+
+class OrderLineStoreTests(APITestCase):
+    """
+    An order is split across a merchant's stores, and each store keeps its own
+    mix — two stores need not want the same products at all.
+    """
+
+    def setUp(self):
+        self.merchant = Merchant.objects.create(code="ANT", name="Anthropologie")
+        self.portland = store(self.merchant, "118")
+        self.austin = store(self.merchant, "204")
+        self.wreath = product("DSP-WRT-24", 1.20, (24, 24, 5))
+        self.tree = product("DSP-TRE-60", 3.40, (30, 22, 6))
+
+    def payload(self, lines):
+        return {
+            "name": "Winter decor",
+            "merchant": self.merchant.id,
+            "lines": lines,
+        }
+
+    def line(self, store_obj, product_obj, quantity):
+        return {
+            "store": store_obj.id,
+            "product": product_obj.id,
+            "quantity": quantity,
+        }
+
+    def test_two_stores_may_take_different_products(self):
+        response = self.client.post(
+            "/api/display-orders/",
+            self.payload(
+                [
+                    self.line(self.portland, self.wreath, 24),
+                    self.line(self.austin, self.tree, 12),
+                ]
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        rows = {(r["store_code"], r["product_style_no"]) for r in response.data["lines"]}
+        self.assertEqual(rows, {("118", "DSP-WRT-24"), ("204", "DSP-TRE-60")})
+
+    def test_the_same_product_may_repeat_across_stores(self):
+        response = self.client.post(
+            "/api/display-orders/",
+            self.payload(
+                [
+                    self.line(self.portland, self.wreath, 24),
+                    self.line(self.austin, self.wreath, 18),
+                ]
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(len(response.data["lines"]), 2)
+
+    def test_one_store_cannot_list_a_product_twice(self):
+        response = self.client.post(
+            "/api/display-orders/",
+            self.payload(
+                [
+                    self.line(self.portland, self.wreath, 24),
+                    self.line(self.portland, self.wreath, 6),
+                ]
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("lines", response.data)
+
+    def test_a_store_of_another_merchant_is_refused(self):
+        stranger = Merchant.objects.create(code="WE", name="West Elm")
+        response = self.client.post(
+            "/api/display-orders/",
+            self.payload([self.line(store(stranger, "900"), self.wreath, 24)]),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("lines", response.data)
+
+    def test_a_store_with_order_lines_cannot_be_deleted(self):
+        self.client.post(
+            "/api/display-orders/",
+            self.payload([self.line(self.portland, self.wreath, 24)]),
+            format="json",
+        )
+        # PROTECT — the store is the address those cartons ship to.
+        with self.assertRaises(Exception):
+            self.portland.delete()
 
 
 class DisplayOrderNumberTests(TestCase):
@@ -418,7 +518,12 @@ class PieceCountingTests(TestCase):
         )
 
         self.order = DisplayOrder.objects.create(name="Test", merchant=merchant)
-        DisplayOrderLine.objects.create(order=self.order, product=self.table, quantity=10)
+        DisplayOrderLine.objects.create(
+            order=self.order,
+            store=store(merchant),
+            product=self.table,
+            quantity=10,
+        )
 
     def box(self, part, quantity):
         """Put some of one part in a carton of its own."""

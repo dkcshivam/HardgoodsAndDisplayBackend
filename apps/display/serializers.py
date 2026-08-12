@@ -306,11 +306,16 @@ class DisplayOrderLineSerializer(serializers.ModelSerializer):
     product_description = serializers.CharField(
         source="product.description", read_only=True
     )
+    store_code = serializers.CharField(source="store.code", read_only=True)
+    store_name = serializers.CharField(source="store.name", read_only=True)
 
     class Meta:
         model = DisplayOrderLine
         fields = [
             "id",
+            "store",
+            "store_code",
+            "store_name",
             "product",
             "product_style_no",
             "product_description",
@@ -341,6 +346,30 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["number", "status"]
+
+    def validate(self, attrs):
+        merchant = attrs.get("merchant", getattr(self.instance, "merchant", None))
+        lines = attrs.get("lines")
+        if lines is None:
+            return attrs
+
+        seen = set()
+        for line in lines:
+            store, product = line["store"], line["product"]
+            if merchant and store.merchant_id != merchant.id:
+                raise serializers.ValidationError(
+                    {"lines": f"Store {store.code} belongs to another merchant."}
+                )
+            key = (store.id, product.id)
+            if key in seen:
+                raise serializers.ValidationError(
+                    {
+                        "lines": f"Store {store.code} lists {product.style_no} "
+                        "twice — give it one quantity."
+                    }
+                )
+            seen.add(key)
+        return attrs
 
     def get_shipping_address(self, obj) -> dict:
         return {
