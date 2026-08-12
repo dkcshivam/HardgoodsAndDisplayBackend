@@ -379,6 +379,17 @@ class OrderLineStoreTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("lines", response.data)
 
+    def test_reconciliation_counts_a_product_once_across_stores(self):
+        order = DisplayOrder.objects.create(name="Split", merchant=self.merchant)
+        for outlet, quantity in ((self.portland, 24), (self.austin, 18)):
+            DisplayOrderLine.objects.create(
+                order=order, store=outlet, product=self.wreath, quantity=quantity
+            )
+
+        rows = services.reconcile(order)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].ordered, 42)
+
     def test_a_store_with_order_lines_cannot_be_deleted(self):
         self.client.post(
             "/api/display-orders/",

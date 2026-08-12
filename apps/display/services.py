@@ -453,8 +453,17 @@ def reconcile(order: DisplayOrder) -> list[ReconciliationRow]:
     packed = packed_quantities(order)
     rows = []
 
+    # One row per product, not one per line: a product six stores ordered is
+    # six lines but a single thing to reconcile, for as long as the plan
+    # itself counts the order as a whole.
+    ordered: dict[int, int] = {}
+    products: dict[int, object] = {}
     for line in _lines(order):
-        product = line.product
+        ordered[line.product_id] = ordered.get(line.product_id, 0) + line.quantity
+        products[line.product_id] = line.product
+
+    for product_id, wanted in ordered.items():
+        product = products[product_id]
 
         if product.is_multi_part:
             counts = [
@@ -468,9 +477,9 @@ def reconcile(order: DisplayOrder) -> list[ReconciliationRow]:
             ReconciliationRow(
                 product=product.id,
                 style_no=product.style_no,
-                ordered=line.quantity,
+                ordered=wanted,
                 packed=boxed,
-                is_matched=boxed == line.quantity,
+                is_matched=boxed == wanted,
             )
         )
 
