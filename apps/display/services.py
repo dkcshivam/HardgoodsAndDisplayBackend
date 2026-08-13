@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Max, Min, Q
 
 from apps.common import calc
 
@@ -76,6 +76,27 @@ def packed_quantities(order: DisplayOrder) -> Counter:
     for store_id, product_id, part_id, quantity in rows:
         packed[(store_id, product_id, part_id)] += quantity
     return packed
+
+
+def packed_floor(
+    order: DisplayOrder, packed: Counter | None = None
+) -> dict[tuple[int, int], int]:
+    """
+    Per store and product, the most of it already sitting in a box — the
+    lowest an order line can be set to without stranding cartons.
+
+    Max across a multi-part product's pieces rather than min: forty tops and
+    twenty legs boxed means cutting the line to twenty leaves twenty tops in
+    cartons nobody ordered. Note this is the opposite reading from
+    `reconcile`, which asks how many whole products are boxed and so takes
+    the min — both are true, and they answer different questions.
+    """
+    counts = packed_quantities(order) if packed is None else packed
+    floors: dict[tuple[int, int], int] = {}
+    for (store_id, product_id, _part), quantity in counts.items():
+        key = (store_id, product_id)
+        floors[key] = max(floors.get(key, 0), quantity)
+    return floors
 
 
 def remaining_quantities(order: DisplayOrder) -> dict[Piece, int]:
@@ -255,6 +276,33 @@ def delete_step(order: DisplayOrder, sequence: int) -> list[Adjustment]:
     step.cartons.all().delete()
     step.delete()
     return _replay_from(order, sequence)
+
+
+def orders_using(template: PackTemplate) -> list[DisplayOrder]:
+    """Every order whose plan holds a step of this design."""
+    return list(
+        DisplayOrder.objects.filter(steps__template=template)
+        .distinct()
+        .order_by("number")
+    )
+
+
+@transaction.atomic
+def replay_template(order: DisplayOrder, template: PackTemplate) -> list[Adjustment]:
+    """
+    Rebuild the plan from the first step that applies this design.
+
+    Cartons copy their contents at apply time, so changing what a box holds
+    leaves every box already built from it saying the old thing. Replaying is
+    what puts the two back in agreement — and it is why a design applied on
+    more than one order cannot be edited in place.
+    """
+    first = order.steps.filter(template=template).aggregate(Min("sequence"))[
+        "sequence__min"
+    ]
+    if first is None:
+        return []
+    return _replay_from(order, first)
 
 
 def _step(order: DisplayOrder, sequence: int) -> PackStep:
@@ -516,6 +564,9 @@ class ReconciliationRow:
     style_no: str
     ordered: int
     packed: int
+    #: The lowest this order line may be set to — see `packed_floor`. Carried
+    #: here so the order form can lock a line without a request of its own.
+    packed_floor: int
     is_matched: bool
 
 
@@ -534,6 +585,7 @@ def reconcile(
     wreaths in Portland do nothing for Austin.
     """
     packed = packed_quantities(order)
+    floors = packed_floor(order, packed)
     rows = []
 
     ordered: dict[tuple[int, int], int] = {}
@@ -567,6 +619,7 @@ def reconcile(
                 style_no=product.style_no,
                 ordered=wanted,
                 packed=boxed,
+                packed_floor=floors.get((store, product.id), 0),
                 is_matched=boxed == wanted,
             )
         )

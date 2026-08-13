@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.http import FileResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -94,6 +95,61 @@ class PackTemplateViewSet(viewsets.ModelViewSet):
             )
         instance.delete()
 
+    def update(self, request, *args, **kwargs):
+        """
+        Editing a design that is already packed replays the plan built from it,
+        so the boxes end up holding what the design now says. Cartons snapshot
+        their contents when a step is applied, so without the replay the two
+        drift apart silently.
+        """
+        template = self.get_object()
+        orders = services.orders_using(template)
+
+        shipped = [
+            order.number
+            for order in orders
+            if order.status == DisplayOrderStatus.SHIPPED
+        ]
+        if shipped:
+            raise ValidationError(
+                {
+                    "detail": (
+                        f"{template.code} is packed into {', '.join(shipped)}, "
+                        "which has already shipped."
+                    )
+                }
+            )
+
+        # One order can be replayed; several cannot, because rewriting a design
+        # would silently rebuild a plan somebody else is working to.
+        if len(orders) > 1:
+            raise ValidationError(
+                {
+                    "detail": (
+                        f"{template.code} is packed into "
+                        f"{', '.join(order.number for order in orders)}. Editing it "
+                        "would rewrite all of them — copy it to a new code instead."
+                    )
+                }
+            )
+
+        before = self._contents_signature(template)
+
+        with transaction.atomic():
+            response = super().update(request, *args, **kwargs)
+            # A rename leaves every box holding the same thing, and replaying
+            # would renumber the tail's cartons for nothing.
+            if orders and self._contents_signature(template) != before:
+                response.data["adjustments"] = AdjustmentSerializer(
+                    services.replay_template(orders[0], template), many=True
+                ).data
+
+        return response
+
+    @staticmethod
+    def _contents_signature(template):
+        return sorted(template.items.values_list("product_id", "part_id", "quantity"))
+
 
 class DisplayOrderViewSet(viewsets.ModelViewSet):
     queryset = (
@@ -107,6 +163,39 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
     filterset_fields = ["status", "merchant"]
     search_fields = ["number", "name", "buyer_name"]
     ordering_fields = ["created_at", "number"]
+
+    def update(self, request, *args, **kwargs):
+        """
+        Lines can be added at any time; the serializer refuses to remove or
+        reduce one that is already in cartons.
+        """
+        order = self.get_object()
+
+        if order.status == DisplayOrderStatus.SHIPPED:
+            return Response(
+                {"detail": "This order has already shipped."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        before = self._demand_signature(order)
+        response = super().update(request, *args, **kwargs)
+        order.refresh_from_db()
+
+        # A packed order that is asked for something new is not packed any
+        # more — there is now demand no carton answers.
+        if (
+            order.status == DisplayOrderStatus.PACKED
+            and self._demand_signature(order) != before
+        ):
+            order.status = DisplayOrderStatus.PACKING
+            order.save(update_fields=["status", "updated_at"])
+            response.data["status"] = order.status
+
+        return response
+
+    @staticmethod
+    def _demand_signature(order):
+        return sorted(order.lines.values_list("store_id", "product_id", "quantity"))
 
     # ── The packing workspace ────────────────────────────────────────
 

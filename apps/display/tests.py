@@ -1104,3 +1104,275 @@ class DisplayStyleNameTests(APITestCase):
 
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data["style_name"], "")
+
+
+class DisplayOrderEditTests(APITestCase):
+    """
+    An order can always be asked for more. Taking away what is already in a
+    carton is refused, because reconciliation and the store overview are both
+    read off the lines — a packed line that vanishes takes its boxes out of
+    every check that would have caught them.
+    """
+
+    def setUp(self):
+        self.merchant = Merchant.objects.create(code="TRQ", name="Tarique")
+        self.store = store()
+        self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))
+        self.wreath = product("DSP-WRT-24", 1.4, (24, 24, 6))
+        self.tpl = template("TPL-001", [(self.bow, 10)])
+
+        self.order = DisplayOrder.objects.create(name="Holiday", merchant=self.merchant)
+        DisplayOrderLine.objects.create(
+            order=self.order, store=self.store, product=self.bow, quantity=40
+        )
+
+    def line(self, item, quantity):
+        return {"store": self.store.id, "product": item.id, "quantity": quantity}
+
+    def put(self, lines):
+        return self.client.put(
+            f"/api/display-orders/{self.order.id}/",
+            {"name": self.order.name, "merchant": self.merchant.id, "lines": lines},
+            format="json",
+        )
+
+    def test_a_product_can_be_added_once_packing_has_started(self):
+        services.apply_step(self.order, self.tpl, self.store)
+
+        response = self.put([self.line(self.bow, 40), self.line(self.wreath, 12)])
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.order.lines.count(), 2)
+        self.assertEqual(self.order.cartons.count(), 4)
+
+    def test_an_untouched_line_keeps_its_row(self):
+        before = self.order.lines.get(product=self.bow).id
+
+        self.put([self.line(self.bow, 40), self.line(self.wreath, 12)])
+
+        self.assertEqual(self.order.lines.get(product=self.bow).id, before)
+
+    def test_removing_a_packed_line_is_refused(self):
+        services.apply_step(self.order, self.tpl, self.store)
+
+        response = self.put([self.line(self.wreath, 12)])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("DSP-BOW-12", str(response.data["lines"]))
+        self.assertTrue(self.order.lines.filter(product=self.bow).exists())
+        # The whole edit rolled back, so the new line never landed either.
+        self.assertFalse(self.order.lines.filter(product=self.wreath).exists())
+
+    def test_reducing_below_what_is_packed_is_refused(self):
+        services.apply_step(self.order, self.tpl, self.store)
+
+        response = self.put([self.line(self.bow, 20)])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.order.lines.get(product=self.bow).quantity, 40)
+
+    def test_reducing_to_exactly_what_is_packed_is_allowed(self):
+        services.apply_step(self.order, self.tpl, self.store, count=2)
+
+        response = self.put([self.line(self.bow, 20)])
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.order.lines.get(product=self.bow).quantity, 20)
+
+    def test_an_unpacked_line_is_removed_freely(self):
+        response = self.put([self.line(self.wreath, 12)])
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(self.order.lines.filter(product=self.bow).exists())
+
+    def test_a_shipped_order_refuses_edits(self):
+        self.order.status = "shipped"
+        self.order.save(update_fields=["status"])
+
+        response = self.put([self.line(self.bow, 40)])
+
+        self.assertEqual(response.status_code, 409)
+
+    def test_new_demand_takes_a_packed_order_back_to_packing(self):
+        services.apply_step(self.order, self.tpl, self.store)
+        self.order.status = "packed"
+        self.order.save(update_fields=["status"])
+
+        response = self.put([self.line(self.bow, 40), self.line(self.wreath, 12)])
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "packing")
+
+    def test_the_floor_is_the_largest_piece_count_not_the_smallest(self):
+        table = DisplayProduct.objects.create(
+            style_no="DSP-TBL-01", description="Table", is_multi_part=True
+        )
+        top = DisplayProductPart.objects.create(
+            product=table, name="Top", product_weight_kg=Decimal("3.2")
+        )
+        DisplayProductPart.objects.create(
+            product=table, name="Legs", product_weight_kg=Decimal("2.1")
+        )
+        DisplayOrderLine.objects.create(
+            order=self.order, store=self.store, product=table, quantity=20
+        )
+        tops_only = PackTemplate.objects.create(
+            code="TPL-TOP", name="Tops", is_library=True
+        )
+        PackTemplateItem.objects.create(
+            template=tops_only, product=table, part=top, quantity=5
+        )
+        services.apply_step(self.order, tops_only, self.store)
+
+        # Twenty tops are boxed and no legs are. Cutting the line to ten would
+        # strand ten of those tops, so twenty is the floor.
+        floors = services.packed_floor(self.order)
+        self.assertEqual(floors[(self.store.id, table.id)], 20)
+
+        # The plan carries it, so the order form locks on the same number the
+        # server enforces. `packed` stays 0 — no whole table is boxed yet.
+        row = next(
+            r for r in services.reconcile(self.order) if r.product == table.id
+        )
+        self.assertEqual((row.packed, row.packed_floor), (0, 20))
+
+    def test_a_line_pinned_by_one_part_alone_cannot_be_cut(self):
+        table = DisplayProduct.objects.create(
+            style_no="DSP-TBL-02", description="Table", is_multi_part=True
+        )
+        top = DisplayProductPart.objects.create(
+            product=table, name="Top", product_weight_kg=Decimal("3.2")
+        )
+        DisplayProductPart.objects.create(
+            product=table, name="Legs", product_weight_kg=Decimal("2.1")
+        )
+        DisplayOrderLine.objects.create(
+            order=self.order, store=self.store, product=table, quantity=20
+        )
+        tops_only = PackTemplate.objects.create(
+            code="TPL-TOP", name="Tops", is_library=True
+        )
+        PackTemplateItem.objects.create(
+            template=tops_only, product=table, part=top, quantity=5
+        )
+        services.apply_step(self.order, tops_only, self.store)
+
+        response = self.put(
+            [self.line(self.bow, 40), {"store": self.store.id, "product": table.id, "quantity": 10}]
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("DSP-TBL-02", str(response.data["lines"]))
+
+
+class TemplateEditTests(APITestCase):
+    """
+    Cartons copy their contents when a step is applied, so editing a design
+    that is already packed has to rebuild them. A design two orders have
+    packed cannot be edited at all — one of them would be rewritten unasked.
+    """
+
+    def setUp(self):
+        self.merchant = Merchant.objects.create(code="TRQ", name="Tarique")
+        self.store = store()
+        self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))
+        self.wreath = product("DSP-WRT-24", 1.4, (24, 24, 6))
+        self.tpl = template("TPL-001", [(self.bow, 10)])
+
+        self.order = DisplayOrder.objects.create(name="Holiday", merchant=self.merchant)
+        DisplayOrderLine.objects.create(
+            order=self.order, store=self.store, product=self.bow, quantity=40
+        )
+        DisplayOrderLine.objects.create(
+            order=self.order, store=self.store, product=self.wreath, quantity=8
+        )
+
+    def put(self, items, name="Bow box"):
+        return self.client.put(
+            f"/api/pack-templates/{self.tpl.id}/",
+            {"code": "TPL-001", "name": name, "is_library": True, "items": items},
+            format="json",
+        )
+
+    def test_an_unpacked_design_edits_without_a_replay(self):
+        response = self.put([{"product": self.bow.id, "quantity": 5}])
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertNotIn("adjustments", response.data)
+
+    def test_adding_a_piece_rebuilds_the_boxes_already_packed(self):
+        services.apply_step(self.order, self.tpl, self.store)
+        self.assertEqual(self.order.cartons.count(), 4)
+
+        response = self.put(
+            [
+                {"product": self.bow.id, "quantity": 10},
+                {"product": self.wreath.id, "quantity": 2},
+            ]
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        # 40 bows and 8 wreaths both allow four boxes, so the step still stands.
+        self.assertEqual(response.data["adjustments"], [])
+        self.assertEqual(self.order.cartons.count(), 4)
+        self.assertEqual(
+            DisplayCartonContent.objects.filter(
+                carton__order=self.order, product=self.wreath
+            ).count(),
+            4,
+        )
+
+    def test_a_piece_that_no_longer_fits_cuts_the_step_and_reports_it(self):
+        services.apply_step(self.order, self.tpl, self.store)
+
+        response = self.put(
+            [
+                {"product": self.bow.id, "quantity": 10},
+                {"product": self.wreath.id, "quantity": 4},
+            ]
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        # Eight wreaths at four a box is two boxes, not four.
+        self.assertEqual(
+            response.data["adjustments"],
+            [{"sequence": 1, "template_code": "TPL-001", "was": 4, "now": 2}],
+        )
+        self.assertEqual(self.order.cartons.count(), 2)
+
+    def test_a_rename_leaves_the_plan_alone(self):
+        services.apply_step(self.order, self.tpl, self.store)
+
+        response = self.put(
+            [{"product": self.bow.id, "quantity": 10}], name="Renamed box"
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertNotIn("adjustments", response.data)
+        self.assertEqual(self.order.cartons.count(), 4)
+
+    def test_a_design_two_orders_have_packed_is_refused(self):
+        second = DisplayOrder.objects.create(name="Spring", merchant=self.merchant)
+        DisplayOrderLine.objects.create(
+            order=second, store=self.store, product=self.bow, quantity=20
+        )
+        services.apply_step(self.order, self.tpl, self.store)
+        services.apply_step(second, self.tpl, self.store)
+
+        response = self.put([{"product": self.bow.id, "quantity": 5}])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(self.order.number, response.data["detail"])
+        self.assertIn(second.number, response.data["detail"])
+        self.assertEqual(self.tpl.items.get().quantity, 10)
+
+    def test_a_shipped_order_locks_the_designs_it_packed(self):
+        services.apply_step(self.order, self.tpl, self.store)
+        self.order.status = "shipped"
+        self.order.save(update_fields=["status"])
+
+        response = self.put([{"product": self.bow.id, "quantity": 5}])
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(self.order.number, response.data["detail"])

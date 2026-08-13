@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from apps.masters.models import Store
 
+from . import services
 from .models import (
     DisplayCarton,
     DisplayCartonContent,
@@ -427,8 +428,8 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
         instance.save()
 
         if lines is not None:
-            instance.lines.all().delete()
-            self._write_lines(instance, lines)
+            # The form always sends the complete list.
+            self._sync_lines(instance, lines)
 
         return instance
 
@@ -437,6 +438,65 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
         for line in lines:
             line.pop("id", None)
             DisplayOrderLine.objects.create(order=order, **line)
+
+    @staticmethod
+    def _sync_lines(order, lines_data):
+        """
+        Match payload rows to the lines they edit by store and product — the
+        pair is unique per order, and it is the key the cartons are counted
+        under, so the packed check lines up exactly.
+
+        Rewriting the lines wholesale would strand cartons instead: both
+        reconciliation and the store overview are derived from the lines, so a
+        packed line that disappears takes its boxes out of every check that
+        would have caught them.
+        """
+        floors = services.packed_floor(order)
+        existing = {
+            (line.store_id, line.product_id): line
+            for line in order.lines.select_related("store", "product")
+        }
+        kept = set()
+
+        for data in lines_data:
+            data.pop("id", None)
+            key = (data["store"].id, data["product"].id)
+            line = existing.get(key)
+
+            if line is None:
+                DisplayOrderLine.objects.create(order=order, **data)
+            else:
+                floor = floors.get(key, 0)
+                if data["quantity"] < floor:
+                    raise serializers.ValidationError(
+                        {
+                            "lines": (
+                                f"Store {line.store.code} already has {floor} of "
+                                f"{line.product.style_no} in cartons. Drop those "
+                                "steps before ordering fewer."
+                            )
+                        }
+                    )
+                for attr, value in data.items():
+                    setattr(line, attr, value)
+                line.save()
+
+            kept.add(key)
+
+        for key, line in existing.items():
+            if key in kept:
+                continue
+            if floor := floors.get(key, 0):
+                raise serializers.ValidationError(
+                    {
+                        "lines": (
+                            f"Store {line.store.code} already has {floor} of "
+                            f"{line.product.style_no} in cartons. Drop those steps "
+                            "before taking it off the order."
+                        )
+                    }
+                )
+            line.delete()
 
 
 # ── Cartons ──────────────────────────────────────────────────────────
@@ -564,6 +624,7 @@ class ReconciliationSerializer(serializers.Serializer):
     style_no = serializers.CharField()
     ordered = serializers.IntegerField()
     packed = serializers.IntegerField()
+    packed_floor = serializers.IntegerField()
     is_matched = serializers.BooleanField()
 
 
