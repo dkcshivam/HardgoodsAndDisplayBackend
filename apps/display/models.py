@@ -33,6 +33,9 @@ class DisplayProduct(TimeStampedModel):
     style_no = models.CharField(
         max_length=64, unique=True, help_text="Unique SKU code, e.g. DSP-WRT-24"
     )
+    style_name = models.CharField(
+        max_length=180, blank=True, help_text="The buyer's name for the style."
+    )
     description = models.CharField(max_length=255, help_text='e.g. 24" Pine Wreath')
 
     category = models.ForeignKey(
@@ -155,6 +158,70 @@ class DisplayProductPart(models.Model):
     @property
     def unit_cbm(self):
         return calc.cbm(self.length_in, self.width_in, self.height_in)
+
+
+def display_product_image_path(instance, filename):
+    if instance.part_id:
+        return f"display/parts/{instance.part_id}/{filename}"
+    return f"display/products/{instance.product_id or 'unassigned'}/{filename}"
+
+
+class DisplayProductImage(models.Model):
+    """
+    Exactly one of `product` or `part` is set. Parts get their own photos
+    because a packer needs to see the component, not the assembled item.
+    """
+
+    product = models.ForeignKey(
+        DisplayProduct,
+        on_delete=models.CASCADE,
+        related_name="images",
+        null=True,
+        blank=True,
+    )
+    part = models.ForeignKey(
+        DisplayProductPart,
+        on_delete=models.CASCADE,
+        related_name="images",
+        null=True,
+        blank=True,
+    )
+
+    image = models.ImageField(upload_to=display_product_image_path)
+    is_main = models.BooleanField(
+        default=False, help_text="The one photo shown in lists and summaries."
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Main first, so the leading image is the one lists and summaries want.
+        ordering = ["-is_main", "sort_order", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(product__isnull=False, part__isnull=True)
+                    | models.Q(product__isnull=True, part__isnull=False)
+                ),
+                name="display_image_belongs_to_exactly_one_owner",
+            )
+        ]
+
+    def __str__(self):
+        owner = self.product or self.part
+        return f"Image for {owner}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Only one photo per owner can be the main one.
+        if self.is_main:
+            siblings = DisplayProductImage.objects.exclude(pk=self.pk)
+            if self.product_id:
+                siblings = siblings.filter(product_id=self.product_id)
+            else:
+                siblings = siblings.filter(part_id=self.part_id)
+            siblings.update(is_main=False)
 
 
 class PackTemplate(TimeStampedModel):

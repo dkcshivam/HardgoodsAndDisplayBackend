@@ -31,6 +31,12 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-insecure-key-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
+# Behind a TLS-terminating proxy — a tunnel, or any real deployment — the
+# request arrives as plain http, so image URLs would come back http:// and a
+# browser on an https page would block them as mixed content. A direct
+# localhost request sends no such header and is unaffected.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

@@ -11,6 +11,7 @@ from .models import (
     DisplayOrder,
     DisplayOrderStatus,
     DisplayProduct,
+    DisplayProductImage,
     PackTemplate,
 )
 from .serializers import (
@@ -18,6 +19,7 @@ from .serializers import (
     ApplyStepSerializer,
     DisplayCartonSerializer,
     DisplayOrderSerializer,
+    DisplayProductImageSerializer,
     DisplayProductSerializer,
     PackingPlanSerializer,
     PackTemplateSerializer,
@@ -29,12 +31,41 @@ from .serializers import (
 
 class DisplayProductViewSet(viewsets.ModelViewSet):
     queryset = (
-        DisplayProduct.objects.select_related("category").prefetch_related("parts").all()
+        DisplayProduct.objects.select_related("category")
+        .prefetch_related("parts__images", "images")
+        .all()
     )
     serializer_class = DisplayProductSerializer
     filterset_fields = ["status", "category", "is_multi_part"]
-    search_fields = ["style_no", "description"]
+    search_fields = ["style_no", "style_name", "description"]
     ordering_fields = ["style_no", "created_at"]
+
+
+class DisplayProductImageViewSet(viewsets.ModelViewSet):
+    """
+    Photos arrive one at a time as multipart, after their owner exists — a
+    product or part has to have an id before a file can point at it.
+    """
+
+    queryset = DisplayProductImage.objects.select_related("product", "part")
+    serializer_class = DisplayProductImageSerializer
+    filterset_fields = ["product", "part"]
+
+    def perform_create(self, serializer):
+        owner = {
+            key: value
+            for key, value in serializer.validated_data.items()
+            if key in {"product", "part"} and value
+        }
+        first = not DisplayProductImage.objects.filter(**owner).exists()
+        # The first photo of an owner is its main one until told otherwise.
+        serializer.save(
+            is_main=serializer.validated_data.get("is_main", False) or first
+        )
+
+    def perform_destroy(self, instance):
+        instance.image.delete(save=False)
+        instance.delete()
 
 
 class PackTemplateViewSet(viewsets.ModelViewSet):

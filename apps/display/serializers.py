@@ -9,10 +9,28 @@ from .models import (
     DisplayOrder,
     DisplayOrderLine,
     DisplayProduct,
+    DisplayProductImage,
     DisplayProductPart,
     PackTemplate,
     PackTemplateItem,
 )
+
+
+class DisplayProductImageSerializer(serializers.ModelSerializer):
+    """Read nested under a product or part; written by the upload endpoint."""
+
+    class Meta:
+        model = DisplayProductImage
+        fields = ["id", "product", "part", "image", "is_main", "sort_order"]
+
+    def validate(self, attrs):
+        product = attrs.get("product", getattr(self.instance, "product", None))
+        part = attrs.get("part", getattr(self.instance, "part", None))
+        if bool(product) == bool(part):
+            raise serializers.ValidationError(
+                "A photo belongs to exactly one owner — send either product or part."
+            )
+        return attrs
 
 
 class DisplayProductPartSerializer(serializers.ModelSerializer):
@@ -21,11 +39,13 @@ class DisplayProductPartSerializer(serializers.ModelSerializer):
     # items and carton contents pointing at them.
     id = serializers.IntegerField(required=False)
     unit_cbm = serializers.DecimalField(max_digits=12, decimal_places=4, read_only=True)
+    images = DisplayProductImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = DisplayProductPart
         fields = [
             "id",
+            "images",
             "name",
             "description",
             "customs_description",
@@ -43,12 +63,14 @@ class DisplayProductSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source="category.name", read_only=True)
     unit_cbm = serializers.DecimalField(max_digits=12, decimal_places=4, read_only=True)
     parts = DisplayProductPartSerializer(many=True, required=False)
+    images = DisplayProductImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = DisplayProduct
         fields = [
             "id",
             "style_no",
+            "style_name",
             "description",
             "category",
             "category_name",
@@ -62,6 +84,7 @@ class DisplayProductSerializer(serializers.ModelSerializer):
             "height_in",
             "unit_cbm",
             "parts",
+            "images",
             "created_at",
         ]
 

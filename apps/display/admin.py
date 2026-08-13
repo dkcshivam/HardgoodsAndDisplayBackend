@@ -30,6 +30,7 @@ class DisplayProductPartInline(admin.TabularInline):
 class DisplayProductAdmin(admin.ModelAdmin):
     list_display = (
         "style_no",
+        "style_name",
         "description",
         "category",
         "packing",
@@ -37,14 +38,23 @@ class DisplayProductAdmin(admin.ModelAdmin):
         "status",
     )
     list_filter = ("status", "is_multi_part", "category")
-    search_fields = ("style_no", "description")
+    search_fields = ("style_no", "style_name", "description")
     readonly_fields = ("created_at", "updated_at")
     inlines = [DisplayProductPartInline]
 
     fieldsets = (
         (
             "Item",
-            {"fields": ("style_no", "description", "category", "is_multi_part", "status")},
+            {
+                "fields": (
+                    "style_no",
+                    "style_name",
+                    "description",
+                    "category",
+                    "is_multi_part",
+                    "status",
+                )
+            },
         ),
         ("Customs", {"fields": ("customs_description", "hsn_code")}),
         (

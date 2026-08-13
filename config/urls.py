@@ -7,6 +7,7 @@ from rest_framework.routers import DefaultRouter
 from apps.catalog.views import ProductImageViewSet, ProductViewSet
 from apps.display.views import (
     DisplayOrderViewSet,
+    DisplayProductImageViewSet,
     DisplayProductViewSet,
     PackTemplateViewSet,
 )
@@ -23,6 +24,7 @@ router.register("product-images", ProductImageViewSet)
 router.register("orders", OrderViewSet)
 
 router.register("display-products", DisplayProductViewSet)
+router.register("display-product-images", DisplayProductImageViewSet)
 router.register("pack-templates", PackTemplateViewSet)
 router.register("display-orders", DisplayOrderViewSet)
 

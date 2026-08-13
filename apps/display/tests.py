@@ -1,8 +1,11 @@
+import base64
+import tempfile
 from collections import Counter
 from decimal import Decimal
 from io import BytesIO
 
-from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
 from rest_framework.test import APITestCase
 
 from apps.masters.models import Merchant, Store
@@ -14,6 +17,7 @@ from .models import (
     DisplayOrder,
     DisplayOrderLine,
     DisplayProduct,
+    DisplayProductImage,
     DisplayProductPart,
     PackTemplate,
     PackTemplateItem,
@@ -1001,3 +1005,102 @@ class ApplicableTemplateContentsTests(TestCase):
                 {"style_no": "DSP-TBL-01", "part_name": "Legs", "quantity": 4},
             ],
         )
+
+
+PIXEL_GIF = base64.b64decode(
+    b"R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="
+)
+
+
+def upload(name="photo.gif"):
+    return SimpleUploadedFile(name, PIXEL_GIF, content_type="image/gif")
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class DisplayProductImageTests(APITestCase):
+    """Photos hang off a display product or one of its parts, never both."""
+
+    URL = "/api/display-product-images/"
+
+    def setUp(self):
+        self.wreath = DisplayProduct.objects.create(
+            style_no="DSP-WRT-24", description='24" Pine Wreath'
+        )
+        self.arch = DisplayProduct.objects.create(
+            style_no="DSP-ARC-84", description='84" Garden Arch', is_multi_part=True
+        )
+        self.post = DisplayProductPart.objects.create(
+            product=self.arch, name="Left post", sort_order=0
+        )
+
+    def send(self, **data):
+        return self.client.post(self.URL, data, format="multipart")
+
+    def test_a_photo_needs_exactly_one_owner(self):
+        self.assertEqual(self.send(image=upload()).status_code, 400)
+        self.assertEqual(
+            self.send(
+                image=upload(), product=self.wreath.pk, part=self.post.pk
+            ).status_code,
+            400,
+        )
+
+    def test_the_first_photo_of_an_owner_becomes_its_main(self):
+        first = self.send(image=upload("a.gif"), product=self.wreath.pk)
+        second = self.send(image=upload("b.gif"), product=self.wreath.pk)
+
+        self.assertTrue(first.data["is_main"])
+        self.assertFalse(second.data["is_main"])
+
+    def test_promoting_a_photo_demotes_the_previous_main(self):
+        first = self.send(image=upload("a.gif"), product=self.wreath.pk)
+        second = self.send(image=upload("b.gif"), product=self.wreath.pk)
+
+        self.client.patch(
+            f"{self.URL}{second.data['id']}/", {"is_main": True}, format="json"
+        )
+
+        self.assertFalse(DisplayProductImage.objects.get(pk=first.data["id"]).is_main)
+        self.assertTrue(DisplayProductImage.objects.get(pk=second.data["id"]).is_main)
+
+    def test_a_part_carries_its_own_photos(self):
+        self.send(image=upload(), part=self.post.pk)
+
+        response = self.client.get(f"/api/display-products/{self.arch.pk}/")
+
+        self.assertEqual(len(response.data["parts"][0]["images"]), 1)
+        self.assertEqual(response.data["images"], [])
+
+    def test_a_products_photos_come_back_nested(self):
+        self.send(image=upload(), product=self.wreath.pk)
+
+        response = self.client.get(f"/api/display-products/{self.wreath.pk}/")
+
+        self.assertEqual(len(response.data["images"]), 1)
+        self.assertIn("/media/display/products/", response.data["images"][0]["image"])
+
+
+class DisplayStyleNameTests(APITestCase):
+    def test_style_name_round_trips(self):
+        response = self.client.post(
+            "/api/display-products/",
+            {
+                "style_no": "DSP-NEW-01",
+                "style_name": "Winter Garland",
+                "description": "Garland",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["style_name"], "Winter Garland")
+
+    def test_style_name_is_optional(self):
+        response = self.client.post(
+            "/api/display-products/",
+            {"style_no": "DSP-NEW-02", "description": "No name"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["style_name"], "")
