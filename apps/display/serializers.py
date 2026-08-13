@@ -519,12 +519,19 @@ class StoreProgressSerializer(serializers.Serializer):
     is_done = serializers.BooleanField()
 
 
+class TemplateContentSerializer(serializers.Serializer):
+    style_no = serializers.CharField()
+    part_name = serializers.CharField()
+    quantity = serializers.IntegerField()
+
+
 class ApplicableTemplateSerializer(serializers.Serializer):
     template = serializers.IntegerField()
     code = serializers.CharField()
     name = serializers.CharField()
     capacity = serializers.IntegerField()
     units_per_carton = serializers.IntegerField()
+    contents = TemplateContentSerializer(many=True)
 
 
 class ReconciliationSerializer(serializers.Serializer):

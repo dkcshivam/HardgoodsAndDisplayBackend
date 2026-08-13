@@ -472,7 +472,7 @@ def applicable_templates(order: DisplayOrder, store_id: int) -> list[dict]:
             | Q(is_library=True, merchant=order.merchant_id)
             | Q(order=order)
         )
-        .prefetch_related("items__product")
+        .prefetch_related("items__product", "items__part")
         .distinct()
     )
 
@@ -488,6 +488,16 @@ def applicable_templates(order: DisplayOrder, store_id: int) -> list[dict]:
                 "name": template.name,
                 "capacity": capacity,
                 "units_per_carton": template.total_units,
+                # Choosing a box means knowing what goes in it — a code and a
+                # unit count alone say nothing about which pieces it takes.
+                "contents": [
+                    {
+                        "style_no": item.product.style_no,
+                        "part_name": item.part.name if item.part else "",
+                        "quantity": item.quantity,
+                    }
+                    for item in template.items.all()
+                ],
             }
         )
 

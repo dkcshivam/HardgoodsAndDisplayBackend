@@ -957,3 +957,47 @@ class TemplateDeleteTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn(order.number, response.data["detail"])
         self.assertTrue(PackTemplate.objects.filter(pk=self.tpl.pk).exists())
+
+
+class ApplicableTemplateContentsTests(TestCase):
+    """Choosing a box design means seeing which pieces it takes."""
+
+    def setUp(self):
+        self.merchant = Merchant.objects.create(code="TRQ", name="Tarique")
+        self.store = store()
+        self.table = DisplayProduct.objects.create(
+            style_no="DSP-TBL-01", description="Display Table", is_multi_part=True
+        )
+        self.top = DisplayProductPart.objects.create(
+            product=self.table, name="Top", product_weight_kg=Decimal("3.2"), sort_order=0
+        )
+        self.legs = DisplayProductPart.objects.create(
+            product=self.table, name="Legs", product_weight_kg=Decimal("2.1"), sort_order=1
+        )
+
+        self.order = DisplayOrder.objects.create(name="Holiday", merchant=self.merchant)
+        # One line per product; the remaining map explodes it into parts.
+        DisplayOrderLine.objects.create(
+            order=self.order, store=self.store, product=self.table, quantity=20
+        )
+
+        self.tpl = PackTemplate.objects.create(code="TPL-001", name="Table box",
+                                               is_library=True)
+        PackTemplateItem.objects.create(
+            template=self.tpl, product=self.table, part=self.top, quantity=2
+        )
+        PackTemplateItem.objects.create(
+            template=self.tpl, product=self.table, part=self.legs, quantity=4
+        )
+
+    def test_each_offered_design_carries_its_pieces_and_quantities(self):
+        rows = services.applicable_templates(self.order, self.store.id)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            rows[0]["contents"],
+            [
+                {"style_no": "DSP-TBL-01", "part_name": "Top", "quantity": 2},
+                {"style_no": "DSP-TBL-01", "part_name": "Legs", "quantity": 4},
+            ],
+        )
