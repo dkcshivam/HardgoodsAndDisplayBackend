@@ -1,6 +1,7 @@
 from django.http import FileResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from . import services
@@ -44,6 +45,23 @@ class PackTemplateViewSet(viewsets.ModelViewSet):
     filterset_fields = ["is_library", "is_active", "merchant"]
     search_fields = ["code", "name"]
     ordering_fields = ["code", "created_at"]
+
+    def perform_destroy(self, instance):
+        # PackStep protects its template, so deleting one already packed would
+        # surface as a 500. Say which orders hold it instead.
+        orders = sorted(
+            {step.order.number for step in instance.steps.select_related("order")}
+        )
+        if orders:
+            raise ValidationError(
+                {
+                    "detail": (
+                        f"{instance.code} is packed into {', '.join(orders)}. "
+                        "Drop those steps first, or deactivate it instead."
+                    )
+                }
+            )
+        instance.delete()
 
 
 class DisplayOrderViewSet(viewsets.ModelViewSet):

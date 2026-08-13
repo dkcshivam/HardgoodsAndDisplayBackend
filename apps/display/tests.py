@@ -928,3 +928,32 @@ class TemplateItemPieceTests(APITestCase):
         # 3.2 + 2.1 contents, + 0.25 padding, + 0.8 box
         self.assertEqual(Decimal(str(response.data["net_weight_kg"])), Decimal("5.550"))
         self.assertEqual(Decimal(str(response.data["gross_weight_kg"])), Decimal("6.350"))
+
+
+class TemplateDeleteTests(APITestCase):
+    """A design is deletable until a plan has packed it into cartons."""
+
+    def setUp(self):
+        self.merchant = Merchant.objects.create(code="TRQ", name="Tarique")
+        self.store = store()
+        self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))
+        self.tpl = template("TPL-001", [(self.bow, 10)])
+
+    def test_an_unused_template_is_deleted(self):
+        response = self.client.delete(f"/api/pack-templates/{self.tpl.id}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(PackTemplate.objects.filter(pk=self.tpl.pk).exists())
+
+    def test_a_packed_template_is_refused_and_names_the_order(self):
+        order = DisplayOrder.objects.create(name="Holiday", merchant=self.merchant)
+        DisplayOrderLine.objects.create(
+            order=order, store=self.store, product=self.bow, quantity=10
+        )
+        services.apply_step(order, self.tpl, self.store)
+
+        response = self.client.delete(f"/api/pack-templates/{self.tpl.id}/")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(order.number, response.data["detail"])
+        self.assertTrue(PackTemplate.objects.filter(pk=self.tpl.pk).exists())
