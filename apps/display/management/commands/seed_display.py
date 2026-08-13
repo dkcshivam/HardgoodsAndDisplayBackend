@@ -112,11 +112,11 @@ class Command(BaseCommand):
         category, _ = Category.objects.get_or_create(name="Decor")
 
         merchant, _ = Merchant.objects.get_or_create(
-            code="TRN",
+            code="TRQ",
             defaults={
-                "name": "Terrain Home",
-                "contact_name": "Marco Reyes",
-                "email": "marco@terrain.com",
+                "name": "Tarique",
+                "contact_name": "Tarique Ahmed",
+                "email": "tarique@example.com",
                 "city": "Portland",
                 "country": "US",
             },

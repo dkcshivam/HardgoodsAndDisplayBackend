@@ -21,14 +21,10 @@ def d(value) -> Decimal:
 CATEGORIES = ["Table", "Chair", "Storage", "Stool", "Decor", "Lighting"]
 
 MERCHANTS = [
-    ("UO", "Urban Outfitters Inc", "Dana Whitfield", "dana@urbn.com",
+    ("SHL", "Shailendra", "Shailendra Kumar", "shailendra@example.com",
      "+1 215 555 0142", "Philadelphia", "US"),
-    ("TRN", "Terrain Home", "Marco Reyes", "marco@terrain.com",
+    ("TRQ", "Tarique", "Tarique Ahmed", "tarique@example.com",
      "+1 503 555 0088", "Portland", "US"),
-    ("WE", "West Elm Group", "Priya Anand", "priya@westelm.com",
-     "+1 718 555 0203", "Brooklyn", "US"),
-    ("ANTH", "Anthropologie", "Leon Garcia", "leon@anthro.com",
-     "+1 215 555 0777", "Philadelphia", "US"),
 ]
 
 # style_no, description, category, status, pack_per_box,
@@ -171,7 +167,7 @@ PRODUCTS = [
     },
 ]
 
-UO_ADDRESS = {
+SHL_ADDRESS = {
     "ship_country": "US",
     "ship_line1": "5000 South Broad St",
     "ship_city": "Philadelphia",
@@ -183,10 +179,10 @@ UO_ADDRESS = {
 # whatever finish that order asked for.
 ORDERS = [
     {
-        "name": "UO Fall Dining Refresh",
-        "merchant": "UO",
-        "buyer": "Dana Whitfield",
-        "address": UO_ADDRESS,
+        "name": "Shailendra Fall Dining Refresh",
+        "merchant": "SHL",
+        "buyer": "Shailendra Kumar",
+        "address": SHL_ADDRESS,
         "status": "draft",
         "lines": [
             ("DKC-TBL-OAK-01", 3, "Natural Oak"),
@@ -195,10 +191,10 @@ ORDERS = [
         ],
     },
     {
-        "name": "UO Spring Seating",
-        "merchant": "UO",
-        "buyer": "Dana Whitfield",
-        "address": UO_ADDRESS,
+        "name": "Shailendra Spring Seating",
+        "merchant": "SHL",
+        "buyer": "Shailendra Kumar",
+        "address": SHL_ADDRESS,
         "status": "packing",
         "lines": [
             ("DKC-CHR-OAK-02", 20, "Charcoal Wash"),
@@ -206,9 +202,9 @@ ORDERS = [
         ],
     },
     {
-        "name": "Terrain Patio Set",
-        "merchant": "TRN",
-        "buyer": "Marco Reyes",
+        "name": "Tarique Patio Set",
+        "merchant": "TRQ",
+        "buyer": "Tarique Ahmed",
         "address": {
             "ship_country": "US",
             "ship_line1": "900 SE Water Ave",
@@ -223,9 +219,9 @@ ORDERS = [
         ],
     },
     {
-        "name": "West Elm Bookcases",
-        "merchant": "WE",
-        "buyer": "Priya Anand",
+        "name": "Tarique Bookcases",
+        "merchant": "TRQ",
+        "buyer": "Tarique Ahmed",
         "address": {
             "ship_country": "US",
             "ship_line1": "55 Water St",
@@ -237,10 +233,10 @@ ORDERS = [
         "lines": [("DKC-BKC-WAL-03", 15, "Dark Walnut")],
     },
     {
-        "name": "UO Bar Refresh",
-        "merchant": "UO",
-        "buyer": "Dana Whitfield",
-        "address": UO_ADDRESS,
+        "name": "Shailendra Bar Refresh",
+        "merchant": "SHL",
+        "buyer": "Shailendra Kumar",
+        "address": SHL_ADDRESS,
         "status": "draft",
         "lines": [
             ("DKC-STL-OAK-05", 24, "Natural Oak"),
