@@ -32,8 +32,8 @@ def product(style_no, weight, size):
     )
 
 
-def store(merchant, code="MAIN"):
-    return Store.objects.create(merchant=merchant, code=code, name=f"Store {code}")
+def store(code="MAIN"):
+    return Store.objects.create(code=code, name=f"Store {code}")
 
 
 def template(code, items, box=(28, 20, 16), box_kg=0.8, packing_kg=0.25):
@@ -56,7 +56,7 @@ def template(code, items, box=(28, 20, 16), box_kg=0.8, packing_kg=0.25):
 class DisplayPackingTests(TestCase):
     def setUp(self):
         self.merchant = Merchant.objects.create(code="TRN", name="Terrain Home")
-        self.store = store(self.merchant)
+        self.store = store()
 
         self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))
         self.orn = product("DSP-ORN-06", 0.55, (9, 6, 3))
@@ -308,8 +308,8 @@ class OrderLineStoreTests(APITestCase):
 
     def setUp(self):
         self.merchant = Merchant.objects.create(code="ANT", name="Anthropologie")
-        self.portland = store(self.merchant, "118")
-        self.austin = store(self.merchant, "204")
+        self.portland = store("118")
+        self.austin = store("204")
         self.wreath = product("DSP-WRT-24", 1.20, (24, 24, 5))
         self.tree = product("DSP-TRE-60", 3.40, (30, 22, 6))
 
@@ -370,15 +370,14 @@ class OrderLineStoreTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("lines", response.data)
 
-    def test_a_store_of_another_merchant_is_refused(self):
-        stranger = Merchant.objects.create(code="WE", name="West Elm")
+    def test_any_store_may_go_on_any_merchants_order(self):
+        """Stores are global — the order's merchant does not narrow the list."""
         response = self.client.post(
             "/api/display-orders/",
-            self.payload([self.line(store(stranger, "900"), self.wreath, 24)]),
+            self.payload([self.line(store("900"), self.wreath, 24)]),
             format="json",
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("lines", response.data)
+        self.assertEqual(response.status_code, 201)
 
     def test_reconciliation_keeps_the_stores_apart(self):
         """
@@ -419,8 +418,8 @@ class StorePackingTests(TestCase):
 
     def setUp(self):
         self.merchant = Merchant.objects.create(code="ANT", name="Anthropologie")
-        self.portland = store(self.merchant, "118")
-        self.austin = store(self.merchant, "204")
+        self.portland = store("118")
+        self.austin = store("204")
         self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))
 
         self.order = DisplayOrder.objects.create(name="Split", merchant=self.merchant)
@@ -499,7 +498,7 @@ class StorePackingTests(TestCase):
         self.assertEqual(services.remaining_quantities(self.order), {})
 
     def test_a_store_wanting_something_else_is_not_copied_onto(self):
-        odd = store(self.merchant, "331")
+        odd = store("331")
         DisplayOrderLine.objects.create(
             order=self.order, store=odd, product=self.bow, quantity=45
         )
@@ -531,10 +530,10 @@ class DisplayPackingListTests(APITestCase):
 
     def setUp(self):
         self.merchant = Merchant.objects.create(code="ANT", name="Anthropologie")
-        self.portland = store(self.merchant, "118")
+        self.portland = store("118")
         self.portland.ship_city = "Portland"
         self.portland.save()
-        self.austin = store(self.merchant, "204")
+        self.austin = store("204")
         self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))
 
         self.order = DisplayOrder.objects.create(name="Split", merchant=self.merchant)
@@ -738,7 +737,7 @@ class PieceCountingTests(TestCase):
             product=self.table, name="Legs", product_weight_kg=Decimal("2.1"), sort_order=1
         )
 
-        self.store = store(merchant)
+        self.store = store()
         self.order = DisplayOrder.objects.create(name="Test", merchant=merchant)
         DisplayOrderLine.objects.create(
             order=self.order,

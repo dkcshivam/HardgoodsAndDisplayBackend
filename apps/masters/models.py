@@ -43,17 +43,15 @@ class Merchant(TimeStampedModel):
 
 class Store(TimeStampedModel):
     """
-    One outlet of a merchant — the address a carton is actually addressed to.
+    One outlet — the address a carton is actually addressed to.
 
-    The merchant buys, the store receives. A display order is split across
-    many of these, and because a carton is never shared between two stores,
-    this is the boundary the packing loop runs inside.
+    Stores are global, not owned by a merchant: the same outlet can receive
+    from any of them, so an order picks freely from the whole list. A display
+    order is split across many of these, and because a carton is never shared
+    between two stores, this is the boundary the packing loop runs inside.
     """
 
-    merchant = models.ForeignKey(
-        Merchant, on_delete=models.PROTECT, related_name="stores"
-    )
-    code = models.CharField(max_length=32, help_text="The merchant's own store number")
+    code = models.CharField(max_length=32, unique=True, help_text="Store number")
     name = models.CharField(max_length=180)
 
     contact_name = models.CharField(max_length=120, blank=True)
@@ -72,14 +70,7 @@ class Store(TimeStampedModel):
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        ordering = ["merchant__name", "code"]
-        constraints = [
-            # Store numbers are the merchant's own, so they need only be
-            # unique within that merchant — two chains may both have a "118".
-            models.UniqueConstraint(
-                fields=["merchant", "code"], name="unique_store_code_per_merchant"
-            )
-        ]
+        ordering = ["code"]
 
     def __str__(self):
         return f"{self.code} · {self.name}"

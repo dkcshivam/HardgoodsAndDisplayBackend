@@ -19,7 +19,7 @@ class MerchantViewSet(viewsets.ModelViewSet):
 
 
 class StoreViewSet(viewsets.ModelViewSet):
-    queryset = Store.objects.select_related("merchant")
+    queryset = Store.objects.all()
     serializer_class = StoreSerializer
-    filterset_fields = ["is_active", "merchant", "ship_country"]
+    filterset_fields = ["is_active", "ship_country"]
     search_fields = ["code", "name", "contact_name", "ship_city"]

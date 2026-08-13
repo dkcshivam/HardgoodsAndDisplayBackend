@@ -21,7 +21,7 @@ from apps.display.models import (
     PackTemplate,
     PackTemplateItem,
 )
-from apps.masters.models import Category, Merchant, Store
+from apps.masters.models import Category, Store
 
 
 def d(value) -> Decimal:
@@ -111,20 +111,8 @@ class Command(BaseCommand):
 
         category, _ = Category.objects.get_or_create(name="Decor")
 
-        merchant, _ = Merchant.objects.get_or_create(
-            code="TRQ",
-            defaults={
-                "name": "Tarique",
-                "contact_name": "Tarique Ahmed",
-                "email": "tarique@example.com",
-                "city": "Portland",
-                "country": "US",
-            },
-        )
-
         for code, name, line1, city, state, postcode in STORES:
             Store.objects.get_or_create(
-                merchant=merchant,
                 code=code,
                 defaults={
                     "name": name,
@@ -175,7 +163,7 @@ class Command(BaseCommand):
             f"  {total_products} products ({len(PART_PRODUCTS)} multi-part, "
             f"{len(PRODUCTS)} single-part)"
         )
-        self.stdout.write(f"  {len(STORES)} stores under {merchant.name}")
+        self.stdout.write(f"  {len(STORES)} stores")
         self.stdout.write(self.style.SUCCESS(
             "Display catalogue loaded — no templates or orders. Build those yourself."
         ))

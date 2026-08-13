@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 
 from .models import Category, Merchant, Store
 
@@ -26,14 +27,10 @@ class MerchantSerializer(serializers.ModelSerializer):
 
 
 class StoreSerializer(serializers.ModelSerializer):
-    merchant_name = serializers.CharField(source="merchant.name", read_only=True)
-
     class Meta:
         model = Store
         fields = [
             "id",
-            "merchant",
-            "merchant_name",
             "code",
             "name",
             "contact_name",
@@ -47,18 +44,13 @@ class StoreSerializer(serializers.ModelSerializer):
             "ship_country",
             "is_active",
         ]
-        # DRF's own unique-together check reports against non_field_errors,
-        # which a form cannot highlight. validate() below says it on `code`.
-        validators = []
-
-    def validate(self, attrs):
-        merchant = attrs.get("merchant", getattr(self.instance, "merchant", None))
-        code = attrs.get("code", getattr(self.instance, "code", None))
-        clash = Store.objects.filter(merchant=merchant, code=code)
-        if self.instance:
-            clash = clash.exclude(pk=self.instance.pk)
-        if clash.exists():
-            raise serializers.ValidationError(
-                {"code": "This merchant already has a store with that code."}
-            )
-        return attrs
+        extra_kwargs = {
+            "code": {
+                "validators": [
+                    UniqueValidator(
+                        queryset=Store.objects.all(),
+                        message="A store with that number already exists.",
+                    )
+                ]
+            }
+        }

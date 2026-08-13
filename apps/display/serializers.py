@@ -350,7 +350,6 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
         read_only_fields = ["number", "status"]
 
     def validate(self, attrs):
-        merchant = attrs.get("merchant", getattr(self.instance, "merchant", None))
         lines = attrs.get("lines")
         if lines is None:
             return attrs
@@ -358,10 +357,6 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
         seen = set()
         for line in lines:
             store, product = line["store"], line["product"]
-            if merchant and store.merchant_id != merchant.id:
-                raise serializers.ValidationError(
-                    {"lines": f"Store {store.code} belongs to another merchant."}
-                )
             key = (store.id, product.id)
             if key in seen:
                 raise serializers.ValidationError(
