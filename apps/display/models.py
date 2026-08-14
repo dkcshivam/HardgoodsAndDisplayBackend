@@ -36,7 +36,9 @@ class DisplayProduct(TimeStampedModel):
     style_name = models.CharField(
         max_length=180, blank=True, help_text="The buyer's name for the style."
     )
-    description = models.CharField(max_length=255, help_text='e.g. 24" Pine Wreath')
+    description = models.CharField(
+        max_length=255, blank=True, help_text='e.g. 24" Pine Wreath'
+    )
 
     category = models.ForeignKey(
         "masters.Category",
@@ -472,7 +474,7 @@ class DisplayOrderLine(models.Model):
     color = models.CharField(max_length=60, blank=True)
 
     class Meta:
-        ordering = ["store__code", "id"]
+        ordering = ["store__name", "id"]
         constraints = [
             models.UniqueConstraint(
                 fields=["order", "store", "product"],
@@ -481,7 +483,7 @@ class DisplayOrderLine(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.store.code} · {self.product.style_no} × {self.quantity}"
+        return f"{self.store.name} · {self.product.style_no} × {self.quantity}"
 
 
 class PackStep(models.Model):

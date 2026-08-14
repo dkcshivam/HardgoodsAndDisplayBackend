@@ -82,15 +82,15 @@ PART_PRODUCTS = [
 
 
 # The outlets an order gets split across.
-# code, name, city, state, postcode
+# name, line1, city, state, postcode
 STORES = [
-    ("118", "Portland Pearl", "900 SE Water Ave", "Portland", "OR", "97214"),
-    ("204", "Austin Domain", "11800 Domain Blvd", "Austin", "TX", "78758"),
-    ("331", "Brooklyn Williamsburg", "62 N 6th St", "Brooklyn", "NY", "11249"),
-    ("407", "Chicago Lincoln Park", "1500 N Halsted St", "Chicago", "IL", "60642"),
-    ("512", "Seattle University Village", "2623 NE University Village St",
+    ("118 Portland Pearl", "900 SE Water Ave", "Portland", "OR", "97214"),
+    ("204 Austin Domain", "11800 Domain Blvd", "Austin", "TX", "78758"),
+    ("331 Brooklyn Williamsburg", "62 N 6th St", "Brooklyn", "NY", "11249"),
+    ("407 Chicago Lincoln Park", "1500 N Halsted St", "Chicago", "IL", "60642"),
+    ("512 Seattle University Village", "2623 NE University Village St",
      "Seattle", "WA", "98105"),
-    ("628", "Denver Cherry Creek", "2800 E 1st Ave", "Denver", "CO", "80206"),
+    ("628 Denver Cherry Creek", "2800 E 1st Ave", "Denver", "CO", "80206"),
 ]
 
 
@@ -111,11 +111,10 @@ class Command(BaseCommand):
 
         category, _ = Category.objects.get_or_create(name="Decor")
 
-        for code, name, line1, city, state, postcode in STORES:
+        for name, line1, city, state, postcode in STORES:
             Store.objects.get_or_create(
-                code=code,
+                name=name,
                 defaults={
-                    "name": name,
                     "ship_line1": line1,
                     "ship_city": city,
                     "ship_state": state,

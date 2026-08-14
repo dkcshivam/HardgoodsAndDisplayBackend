@@ -79,7 +79,7 @@ def build_packing_list(order: DisplayOrder) -> BytesIO:
             sheet,
             row,
             [(block_start, row - 1)],
-            f"{store.code} subtotal · {len(block)} carton"
+            f"{store.name} subtotal · {len(block)} carton"
             f"{'s' if len(block) != 1 else ''}",
         )
         row += 2
@@ -142,5 +142,5 @@ def _store_label(store) -> str:
         )
         if part
     )
-    head = f"STORE {store.code} · {store.name}"
+    head = f"STORE {store.name}"
     return f"{head} — {address}" if address else head

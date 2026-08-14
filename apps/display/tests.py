@@ -36,8 +36,8 @@ def product(style_no, weight, size):
     )
 
 
-def store(code="MAIN"):
-    return Store.objects.create(code=code, name=f"Store {code}")
+def store(name="MAIN"):
+    return Store.objects.create(name=name)
 
 
 def template(code, items, box=(28, 20, 16), box_kg=0.8, packing_kg=0.25):
@@ -343,7 +343,7 @@ class OrderLineStoreTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 201, response.data)
-        rows = {(r["store_code"], r["product_style_no"]) for r in response.data["lines"]}
+        rows = {(r["store_name"], r["product_style_no"]) for r in response.data["lines"]}
         self.assertEqual(rows, {("118", "DSP-WRT-24"), ("204", "DSP-TRE-60")})
 
     def test_the_same_product_may_repeat_across_stores(self):
@@ -396,7 +396,7 @@ class OrderLineStoreTests(APITestCase):
 
         rows = services.reconcile(order)
         self.assertEqual(
-            {(row.store_code, row.ordered) for row in rows},
+            {(row.store_name, row.ordered) for row in rows},
             {("118", 24), ("204", 18)},
         )
 
@@ -485,7 +485,7 @@ class StorePackingTests(TestCase):
     def test_the_summary_reports_each_store_separately(self):
         services.apply_step(self.order, self.box30, self.portland, count=1)
 
-        rows = {row["store_code"]: row for row in services.store_summaries(self.order)}
+        rows = {row["store_name"]: row for row in services.store_summaries(self.order)}
         self.assertTrue(rows["118"]["is_done"])
         self.assertEqual(rows["118"]["carton_count"], 1)
         self.assertFalse(rows["204"]["is_done"])
@@ -497,7 +497,7 @@ class StorePackingTests(TestCase):
 
         copied = services.replicate_plan(self.order, self.austin.id)
 
-        self.assertEqual([s.code for s in copied], ["118"])
+        self.assertEqual([s.name for s in copied], ["118"])
         self.assertEqual(self.order.steps.filter(store=self.portland).count(), 1)
         self.assertEqual(services.remaining_quantities(self.order), {})
 
@@ -509,7 +509,7 @@ class StorePackingTests(TestCase):
         services.apply_step(self.order, self.box30, self.austin, count=1)
 
         targets = services.replicable_stores(self.order, self.austin.id)
-        self.assertEqual([s.code for s in targets], ["118"])
+        self.assertEqual([s.name for s in targets], ["118"])
 
     def test_a_part_packed_store_is_left_alone(self):
         """Copying onto a store somebody has already started would overpack it."""
@@ -525,7 +525,7 @@ class StorePackingTests(TestCase):
         services.apply_step(self.order, self.box30, self.austin, count=1)
 
         plan = services.packing_summary(self.order, self.portland.id)
-        self.assertEqual([row.store_code for row in plan["steps"]], ["118"])
+        self.assertEqual([row.store_name for row in plan["steps"]], ["118"])
         self.assertEqual(len(services.packing_summary(self.order)["steps"]), 2)
 
 

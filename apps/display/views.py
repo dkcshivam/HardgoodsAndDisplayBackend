@@ -247,7 +247,7 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
         store = payload.validated_data["store"]
         if not order.lines.filter(store=store).exists():
             return Response(
-                {"detail": f"Store {store.code} is not on this order."},
+                {"detail": f"Store {store.name} is not on this order."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -355,11 +355,7 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
                 **self._plan(order, source.id),
                 "replicated_to": StoreRefSerializer(
                     [
-                        {
-                            "store": s.id,
-                            "store_code": s.code,
-                            "store_name": s.name,
-                        }
+                        {"store": s.id, "store_name": s.name}
                         for s in copied
                     ],
                     many=True,

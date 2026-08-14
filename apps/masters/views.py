@@ -22,4 +22,4 @@ class StoreViewSet(viewsets.ModelViewSet):
     queryset = Store.objects.all()
     serializer_class = StoreSerializer
     filterset_fields = ["is_active", "ship_country"]
-    search_fields = ["code", "name", "contact_name", "ship_city"]
+    search_fields = ["name", "contact_name", "ship_city"]

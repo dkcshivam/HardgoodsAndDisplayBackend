@@ -49,10 +49,15 @@ class Store(TimeStampedModel):
     from any of them, so an order picks freely from the whole list. A display
     order is split across many of these, and because a carton is never shared
     between two stores, this is the boundary the packing loop runs inside.
+
+    One free-text name, not a number and a name: outlets are written down
+    however the buyer writes them — "118 Portland Pearl" — and splitting that
+    into two fields only made people guess which half went where.
     """
 
-    code = models.CharField(max_length=32, unique=True, help_text="Store number")
-    name = models.CharField(max_length=180)
+    name = models.CharField(
+        max_length=180, unique=True, help_text='Number and name, e.g. "118 Portland Pearl"'
+    )
 
     contact_name = models.CharField(max_length=120, blank=True)
     email = models.EmailField(blank=True)
@@ -70,7 +75,7 @@ class Store(TimeStampedModel):
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        ordering = ["code"]
+        ordering = ["name"]
 
     def __str__(self):
-        return f"{self.code} · {self.name}"
+        return self.name

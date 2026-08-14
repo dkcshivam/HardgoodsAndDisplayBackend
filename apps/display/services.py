@@ -376,7 +376,6 @@ def _resequence(order: DisplayOrder) -> None:
 class StepRow:
     sequence: int
     store: int
-    store_code: str
     store_name: str
     template: int
     template_code: str
@@ -419,7 +418,6 @@ def step_rows(order: DisplayOrder, store_id: int | None = None) -> list[StepRow]
             StepRow(
                 sequence=step.sequence,
                 store=step.store_id,
-                store_code=step.store.code,
                 store_name=step.store.name,
                 template=step.template_id,
                 template_code=step.template.code,
@@ -471,7 +469,6 @@ def _quantity_row(piece: Piece, quantity: int, pieces: dict) -> dict:
     store, product, part = pieces.get(piece, (None, None, None))
     return {
         "store": store_id,
-        "store_code": store.code if store else "",
         "store_name": store.name if store else "",
         "product": product_id,
         "part": part_id,
@@ -559,7 +556,7 @@ def applicable_templates(order: DisplayOrder, store_id: int) -> list[dict]:
 @dataclass
 class ReconciliationRow:
     store: int
-    store_code: str
+    store_name: str
     product: int
     style_no: str
     ordered: int
@@ -614,7 +611,7 @@ def reconcile(
         rows.append(
             ReconciliationRow(
                 store=store,
-                store_code=stores[store].code,
+                store_name=stores[store].name,
                 product=product.id,
                 style_no=product.style_no,
                 ordered=wanted,
@@ -711,7 +708,6 @@ def store_summaries(order: DisplayOrder) -> list[dict]:
         rows.append(
             {
                 "store": store.id,
-                "store_code": store.code,
                 "store_name": store.name,
                 "ordered": wanted,
                 "packed": boxed,
@@ -810,7 +806,7 @@ def find_blockers(order: DisplayOrder) -> list[Blocker]:
             blockers.append(
                 Blocker(
                     "quantity_mismatch",
-                    f"Store {row.store_code} · {row.style_no}: packed "
+                    f"Store {row.store_name} · {row.style_no}: packed "
                     f"{row.packed} of {row.ordered} ordered",
                 )
             )
@@ -898,7 +894,7 @@ def packing_summary(order: DisplayOrder, store_id: int | None = None) -> dict:
         ),
         "reconciliation": reconcile(order, store_id),
         "replicable": [
-            {"store": s.id, "store_code": s.code, "store_name": s.name}
+            {"store": s.id, "store_name": s.name}
             for s in (
                 replicable_stores(order, store_id) if store_id is not None else []
             )

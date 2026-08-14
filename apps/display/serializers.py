@@ -332,7 +332,6 @@ class DisplayOrderLineSerializer(serializers.ModelSerializer):
     product_description = serializers.CharField(
         source="product.description", read_only=True
     )
-    store_code = serializers.CharField(source="store.code", read_only=True)
     store_name = serializers.CharField(source="store.name", read_only=True)
 
     class Meta:
@@ -340,7 +339,6 @@ class DisplayOrderLineSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "store",
-            "store_code",
             "store_name",
             "product",
             "product_style_no",
@@ -385,7 +383,7 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
             if key in seen:
                 raise serializers.ValidationError(
                     {
-                        "lines": f"Store {store.code} lists {product.style_no} "
+                        "lines": f"Store {store.name} lists {product.style_no} "
                         "twice — give it one quantity."
                     }
                 )
@@ -471,7 +469,7 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         {
                             "lines": (
-                                f"Store {line.store.code} already has {floor} of "
+                                f"Store {line.store.name} already has {floor} of "
                                 f"{line.product.style_no} in cartons. Drop those "
                                 "steps before ordering fewer."
                             )
@@ -490,7 +488,7 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {
                         "lines": (
-                            f"Store {line.store.code} already has {floor} of "
+                            f"Store {line.store.name} already has {floor} of "
                             f"{line.product.style_no} in cartons. Drop those steps "
                             "before taking it off the order."
                         )
@@ -530,7 +528,6 @@ class DisplayCartonSerializer(serializers.ModelSerializer):
     template_code = serializers.CharField(
         source="step.template.code", default=None, read_only=True
     )
-    store_code = serializers.CharField(source="store.code", read_only=True)
     store_name = serializers.CharField(source="store.name", read_only=True)
 
     class Meta:
@@ -540,7 +537,6 @@ class DisplayCartonSerializer(serializers.ModelSerializer):
             "carton_no",
             "step",
             "store",
-            "store_code",
             "store_name",
             "template_code",
             "length_in",
@@ -561,7 +557,6 @@ class DisplayCartonSerializer(serializers.ModelSerializer):
 
 class QuantityRowSerializer(serializers.Serializer):
     store = serializers.IntegerField()
-    store_code = serializers.CharField(allow_blank=True)
     store_name = serializers.CharField(allow_blank=True)
     product = serializers.IntegerField()
     part = serializers.IntegerField(allow_null=True)
@@ -574,7 +569,6 @@ class QuantityRowSerializer(serializers.Serializer):
 class StepRowSerializer(serializers.Serializer):
     sequence = serializers.IntegerField()
     store = serializers.IntegerField()
-    store_code = serializers.CharField()
     store_name = serializers.CharField()
     template = serializers.IntegerField()
     template_code = serializers.CharField()
@@ -587,13 +581,11 @@ class StepRowSerializer(serializers.Serializer):
 
 class StoreRefSerializer(serializers.Serializer):
     store = serializers.IntegerField()
-    store_code = serializers.CharField()
     store_name = serializers.CharField()
 
 
 class StoreProgressSerializer(serializers.Serializer):
     store = serializers.IntegerField()
-    store_code = serializers.CharField()
     store_name = serializers.CharField()
     ordered = serializers.IntegerField()
     packed = serializers.IntegerField()
@@ -619,7 +611,7 @@ class ApplicableTemplateSerializer(serializers.Serializer):
 
 class ReconciliationSerializer(serializers.Serializer):
     store = serializers.IntegerField()
-    store_code = serializers.CharField()
+    store_name = serializers.CharField()
     product = serializers.IntegerField()
     style_no = serializers.CharField()
     ordered = serializers.IntegerField()

@@ -31,7 +31,6 @@ class StoreSerializer(serializers.ModelSerializer):
         model = Store
         fields = [
             "id",
-            "code",
             "name",
             "contact_name",
             "email",
@@ -45,11 +44,11 @@ class StoreSerializer(serializers.ModelSerializer):
             "is_active",
         ]
         extra_kwargs = {
-            "code": {
+            "name": {
                 "validators": [
                     UniqueValidator(
                         queryset=Store.objects.all(),
-                        message="A store with that number already exists.",
+                        message="A store with that name already exists.",
                     )
                 ]
             }

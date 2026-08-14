@@ -19,6 +19,6 @@ class MerchantAdmin(admin.ModelAdmin):
 
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
-    list_display = ("code", "name", "ship_city", "ship_state", "is_active")
+    list_display = ("name", "ship_city", "ship_state", "is_active")
     list_filter = ("is_active", "ship_country")
-    search_fields = ("code", "name", "contact_name", "ship_city")
+    search_fields = ("name", "contact_name", "ship_city")
