@@ -239,7 +239,7 @@ class PackTemplate(TimeStampedModel):
         max_length=32,
         unique=True,
         blank=True,
-        help_text="Left empty, it is assigned: BOX-001, BOX-002 …",
+        help_text="Left empty, it is assigned: T-001, T-002 …",
     )
     name = models.CharField(max_length=180, help_text="e.g. 30 bows + 5 wreaths")
 
@@ -309,10 +309,14 @@ class PackTemplate(TimeStampedModel):
         super().save(*args, **kwargs)
 
     @staticmethod
-    def generate_code(prefix: str = "BOX") -> str:
+    def generate_code(prefix: str = "T") -> str:
         """
+        A template prefix, deliberately not a box one: a design is applied any
+        number of times, so a code that read like a carton number would invite
+        the reader to line the two up, and they never line up.
+
         Zero-padded because `Meta.ordering` sorts the code as text: without the
-        padding BOX-10 files between BOX-1 and BOX-2 in every picker.
+        padding T-10 files between T-1 and T-2 in every picker.
         """
         stem = f"{prefix}-"
         highest = (
