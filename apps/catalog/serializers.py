@@ -115,6 +115,9 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
     total_shipping_cbm = serializers.DecimalField(
         max_digits=12, decimal_places=4, read_only=True
     )
+    # The database already refuses the delete (PROTECT). This lets the form
+    # say so before somebody clicks it and reads an error instead.
+    is_in_use = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -127,6 +130,7 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
             "customs_description",
             "hsn_code",
             "is_multi_part",
+            "is_in_use",
             "status",
             "assembled_length_in",
             "assembled_width_in",
@@ -141,6 +145,10 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
             "updated_at",
             *PACK_SPEC_FIELDS,
         ]
+
+    def get_is_in_use(self, product) -> bool:
+        """On an order, so it can no longer be deleted."""
+        return product.order_lines.exists()
 
     def validate(self, attrs):
         is_multi_part = attrs.get(
