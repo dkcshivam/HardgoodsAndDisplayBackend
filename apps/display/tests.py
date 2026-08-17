@@ -588,19 +588,39 @@ class DisplayPackingListTests(APITestCase):
         services.apply_step(self.order, self.tpl, self.portland, count=1)
         services.apply_step(self.order, self.tpl, self.austin, count=1)
 
+        rows = self.rows()
+        header = next(row for row in rows if "Total Qty" in row)
+        totalled = header.index("Total Qty")
         total = next(
-            row[1]
-            for row in self.rows()
+            row[totalled]
+            for row in rows
             if row[0] and str(row[0]).startswith("ORDER TOTAL")
         )
         # Two blocks of one row each, named separately — never B9:B24.
         self.assertRegex(total, r"^=SUM\([A-Z]\d+:[A-Z]\d+,[A-Z]\d+:[A-Z]\d+\)$")
 
         subtotal_rows = [
-            row[0] for row in self.rows() if row[0] and "subtotal" in str(row[0])
+            row[0] for row in rows if row[0] and "subtotal" in str(row[0])
         ]
         cited = total[len("=SUM(") : -1].split(",")
         self.assertEqual(len(cited), len(subtotal_rows))
+
+    def test_every_row_names_its_store_and_no_column_counts_cartons(self):
+        """A row read out of its block still has to say where it ships."""
+        # Two cartons for one store, so the range notation is exercised too.
+        self.order.lines.filter(store=self.portland).update(quantity=60)
+        services.apply_step(self.order, self.tpl, self.portland, count=2)
+        services.apply_step(self.order, self.tpl, self.austin, count=1)
+
+        rows = self.rows()
+        header = next(row for row in rows if "Style No" in row)
+
+        self.assertEqual(header[0], "Store")
+        self.assertNotIn("Cartons", header)
+
+        packed = [row for row in rows if row[1] and str(row[1]).startswith("CTN-")]
+        self.assertEqual([row[0] for row in packed], ["118", "204"])
+        self.assertEqual(packed[0][1], "CTN-001 – CTN-002")
 
     def test_a_store_with_no_cartons_is_left_out(self):
         services.apply_step(self.order, self.tpl, self.portland, count=1)

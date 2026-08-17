@@ -561,6 +561,7 @@ class QuantityRowSerializer(serializers.Serializer):
     product = serializers.IntegerField()
     part = serializers.IntegerField(allow_null=True)
     style_no = serializers.CharField()
+    style_name = serializers.CharField(allow_blank=True)
     part_name = serializers.CharField(allow_blank=True)
     description = serializers.CharField()
     quantity = serializers.IntegerField()

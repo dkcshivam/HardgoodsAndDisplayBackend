@@ -473,6 +473,7 @@ def _quantity_row(piece: Piece, quantity: int, pieces: dict) -> dict:
         "product": product_id,
         "part": part_id,
         "style_no": product.style_no if product else "",
+        "style_name": product.style_name if product else "",
         "part_name": part.name if part else "",
         "description": _piece_description(product, part),
         "quantity": quantity,

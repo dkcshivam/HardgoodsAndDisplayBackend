@@ -21,8 +21,30 @@ from apps.common import packing_sheet as sheet_kit
 from .models import DisplayOrder
 
 
+# The carton count goes: "CTN-001 – CTN-012" already says twelve, and the
+# store arrives instead. A row lifted out of its block — sorted, filtered,
+# pasted into a mail — still has to say where it is going, which the banner
+# above it cannot do.
+_DROPPED = "Cartons"
+_KEPT = [
+    index
+    for index, (label, _, _) in enumerate(sheet_kit.COLUMNS)
+    if label != _DROPPED
+]
+
+LAYOUT = sheet_kit.Layout(
+    columns=[("Store", 12, None)] + [sheet_kit.COLUMNS[index] for index in _KEPT],
+    totalled=sheet_kit.TOTALLED - {_DROPPED},
+)
+
+
 def packing_list_filename(order: DisplayOrder) -> str:
     return f"packing-list-{order.number}.xlsx"
+
+
+def _for_store(values: list, store_name: str) -> list:
+    """A canonical row from the shared kit, in this sheet's column order."""
+    return [store_name] + [values[index] for index in _KEPT]
 
 
 def build_packing_list(order: DisplayOrder) -> BytesIO:
@@ -30,11 +52,11 @@ def build_packing_list(order: DisplayOrder) -> BytesIO:
     sheet = workbook.active
     sheet.title = order.number
 
-    sheet_kit.set_widths(sheet)
+    sheet_kit.set_widths(sheet, LAYOUT)
 
     row = _write_heading(sheet, order)
     header_row = row + 1
-    sheet_kit.write_column_headers(sheet, header_row)
+    sheet_kit.write_column_headers(sheet, header_row, LAYOUT)
 
     row = header_row + 1
     first_data_row = row
@@ -61,7 +83,7 @@ def build_packing_list(order: DisplayOrder) -> BytesIO:
         if not block:
             continue
 
-        sheet_kit.write_banner(sheet, row, _store_label(store))
+        sheet_kit.write_banner(sheet, row, _store_label(store), LAYOUT)
         row += 1
         block_start = row
 
@@ -71,7 +93,7 @@ def build_packing_list(order: DisplayOrder) -> BytesIO:
                     (carton.store_id, content.product_id), ""
                 )
             ):
-                sheet_kit.write_row(sheet, row, values)
+                sheet_kit.write_row(sheet, row, _for_store(values, store.name), LAYOUT)
                 row += 1
 
         spans.append((block_start, row - 1))
@@ -81,6 +103,7 @@ def build_packing_list(order: DisplayOrder) -> BytesIO:
             [(block_start, row - 1)],
             f"{store.name} subtotal · {len(block)} carton"
             f"{'s' if len(block) != 1 else ''}",
+            LAYOUT,
         )
         row += 2
 
@@ -90,6 +113,7 @@ def build_packing_list(order: DisplayOrder) -> BytesIO:
         row,
         spans,
         f"ORDER TOTAL · {count} carton{'s' if count != 1 else ''}",
+        LAYOUT,
     )
     sheet.freeze_panes = sheet.cell(row=first_data_row, column=1)
 

@@ -49,10 +49,27 @@ TOTALLED = {
     "Total CBM",
 }
 
+@dataclass(frozen=True)
+class Layout:
+    """
+    Which columns a sheet prints, and which of them carry a total.
+
+    `Group.rows()` always builds the full canonical row above; a layout that
+    prints something else — Display prepends the store and drops the carton
+    count — reorders that row itself, so the grouping never has to know.
+    """
+
+    columns: list
+    totalled: set
+
+
 HEADER_FILL = PatternFill("solid", fgColor="EEF1FF")
 GROUP_FILL = PatternFill("solid", fgColor="F5F6FA")
 RULE = Side(style="thin", color="D8DCE6")
 BORDER = Border(left=RULE, right=RULE, top=RULE, bottom=RULE)
+
+#: What a sheet prints unless it says otherwise — Hardgoods uses this as is.
+BASE = Layout(COLUMNS, TOTALLED)
 
 
 # ── Grouping ─────────────────────────────────────────────────────────
@@ -216,8 +233,9 @@ def empty_carton_row(carton) -> list:
 # ── Sheet ────────────────────────────────────────────────────────────
 
 
-def set_widths(sheet) -> None:
-    for index, (_, width, _) in enumerate(COLUMNS, start=1):
+def set_widths(sheet, layout: Layout = None) -> None:
+    layout = layout or BASE
+    for index, (_, width, _) in enumerate(layout.columns, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
 
 
@@ -231,8 +249,9 @@ def write_facts(sheet, row: int, facts: list[tuple[str, str]]) -> int:
     return row
 
 
-def write_column_headers(sheet, row: int) -> None:
-    for index, (label, _, _) in enumerate(COLUMNS, start=1):
+def write_column_headers(sheet, row: int, layout: Layout = None) -> None:
+    layout = layout or BASE
+    for index, (label, _, _) in enumerate(layout.columns, start=1):
         cell = sheet.cell(row=row, column=index, value=label)
         cell.font = Font(bold=True)
         cell.fill = HEADER_FILL
@@ -242,9 +261,10 @@ def write_column_headers(sheet, row: int) -> None:
         )
 
 
-def write_row(sheet, row: int, values: list) -> None:
+def write_row(sheet, row: int, values: list, layout: Layout = None) -> None:
+    layout = layout or BASE
     for index, (value, (_, _, number_format)) in enumerate(
-        zip(values, COLUMNS), start=1
+        zip(values, layout.columns), start=1
     ):
         cell = sheet.cell(row=row, column=index, value=value)
         cell.border = BORDER
@@ -253,16 +273,23 @@ def write_row(sheet, row: int, values: list) -> None:
             cell.alignment = Alignment(horizontal="right")
 
 
-def write_banner(sheet, row: int, text: str) -> None:
+def write_banner(sheet, row: int, text: str, layout: Layout = None) -> None:
     """A full-width label opening a block — the store a run of rows is for."""
+    layout = layout or BASE
     cell = sheet.cell(row=row, column=1, value=text)
     cell.font = Font(bold=True)
     cell.fill = GROUP_FILL
-    for index in range(1, len(COLUMNS) + 1):
+    for index in range(1, len(layout.columns) + 1):
         sheet.cell(row=row, column=index).fill = GROUP_FILL
 
 
-def write_totals(sheet, row: int, ranges: list[tuple[int, int]], label: str) -> None:
+def write_totals(
+    sheet,
+    row: int,
+    ranges: list[tuple[int, int]],
+    label: str,
+    layout: Layout = None,
+) -> None:
     """
     Summed with formulas rather than values, so the sheet stays true if
     somebody edits a quantity after it leaves here.
@@ -271,6 +298,7 @@ def write_totals(sheet, row: int, ranges: list[tuple[int, int]], label: str) -> 
     span: a sheet blocked by store has subtotal rows in between, and a single
     span across them would add every carton twice.
     """
+    layout = layout or BASE
     spans = [(a, b) for a, b in ranges if b >= a]
     if not spans:
         return
@@ -278,8 +306,8 @@ def write_totals(sheet, row: int, ranges: list[tuple[int, int]], label: str) -> 
     heading = sheet.cell(row=row, column=1, value=label)
     heading.font = Font(bold=True)
 
-    for index, (label_text, _, number_format) in enumerate(COLUMNS, start=1):
-        if label_text not in TOTALLED:
+    for index, (label_text, _, number_format) in enumerate(layout.columns, start=1):
+        if label_text not in layout.totalled:
             continue
         column = get_column_letter(index)
         parts = ",".join(f"{column}{a}:{column}{b}" for a, b in spans)
