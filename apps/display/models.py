@@ -235,7 +235,12 @@ class PackTemplate(TimeStampedModel):
     carton.
     """
 
-    code = models.CharField(max_length=32, unique=True, help_text="e.g. TPL-001")
+    code = models.CharField(
+        max_length=32,
+        unique=True,
+        blank=True,
+        help_text="Left empty, it is assigned: BOX-001, BOX-002 …",
+    )
     name = models.CharField(max_length=180, help_text="e.g. 30 bows + 5 wreaths")
 
     merchant = models.ForeignKey(
@@ -297,6 +302,30 @@ class PackTemplate(TimeStampedModel):
 
     def __str__(self):
         return f"{self.code} · {self.name}"
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            self.code = self.generate_code()
+        super().save(*args, **kwargs)
+
+    @staticmethod
+    def generate_code(prefix: str = "BOX") -> str:
+        """
+        Zero-padded because `Meta.ordering` sorts the code as text: without the
+        padding BOX-10 files between BOX-1 and BOX-2 in every picker.
+        """
+        stem = f"{prefix}-"
+        highest = (
+            PackTemplate.objects.filter(code__startswith=stem).aggregate(Max("code"))[
+                "code__max"
+            ]
+            or ""
+        )
+        try:
+            sequence = int(highest.rsplit("-", 1)[1]) + 1
+        except (IndexError, ValueError):
+            sequence = 1
+        return f"{stem}{sequence:03d}"
 
     @property
     def cbm(self):

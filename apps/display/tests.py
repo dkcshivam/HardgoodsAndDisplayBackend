@@ -624,6 +624,40 @@ class DisplayOrderNumberTests(TestCase):
         self.assertEqual(int(second.number[-4:]) - int(first.number[-4:]), 1)
 
 
+class TemplateCodeTests(TestCase):
+    """The code identifies a design; nobody types it."""
+
+    def test_codes_run_sequentially(self):
+        first = PackTemplate.objects.create(name="One")
+        second = PackTemplate.objects.create(name="Two")
+
+        self.assertEqual((first.code, second.code), ("BOX-001", "BOX-002"))
+
+    def test_codes_are_padded_so_they_sort_as_written(self):
+        for _ in range(9):
+            PackTemplate.objects.create(name="filler")
+        tenth = PackTemplate.objects.create(name="Tenth")
+
+        self.assertEqual(tenth.code, "BOX-010")
+        self.assertEqual(
+            list(PackTemplate.objects.values_list("code", flat=True))[-2:],
+            ["BOX-009", "BOX-010"],
+        )
+
+    def test_a_code_given_by_hand_is_kept_and_not_counted(self):
+        PackTemplate.objects.create(code="LEGACY-7", name="Hand written")
+        after = PackTemplate.objects.create(name="Next")
+
+        self.assertEqual(after.code, "BOX-001")
+
+    def test_an_edit_keeps_the_code_it_was_given(self):
+        template = PackTemplate.objects.create(name="One")
+        template.name = "Renamed"
+        template.save()
+
+        self.assertEqual(template.code, "BOX-001")
+
+
 class DisplayProductShapeTests(APITestCase):
     """A display product is either one piece or several parts, fixed at birth."""
 
