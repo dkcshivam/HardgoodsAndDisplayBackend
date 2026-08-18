@@ -46,6 +46,29 @@ PACK_SPEC_FIELDS = [
 ]
 
 
+def _unanswered(instance, attrs, field) -> bool:
+    """
+    Blank on the way in and blank on the row already. Falling back to the
+    instance keeps a PATCH of one field from failing on the other seven.
+    """
+    value = attrs.get(field, getattr(instance, field, None))
+    return value is None or value == ""
+
+
+#: A carton cannot be built, weighed or cleared through customs without
+#: these, so nothing that owns a box is allowed to leave them empty.
+BOXED_PIECE_REQUIRED = [
+    "customs_description",
+    "hsn_code",
+    "box_length_in",
+    "box_width_in",
+    "box_height_in",
+    "product_weight_kg",
+    "packing_material_weight_kg",
+    "box_weight_kg",
+]
+
+
 class ProductPartSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
     # Kept on write so an edit can match a payload row to the part it edits;
     # without it every save would recreate the parts and drop their photos.
@@ -67,6 +90,18 @@ class ProductPartSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
             "images",
             *PACK_SPEC_FIELDS,
         ]
+        # A part owns the box its half of the product ships in, so it answers
+        # for all of it — the product above has none of these to fall back on.
+        extra_kwargs = {
+            "name": {"required": True, "allow_blank": False},
+            "customs_description": {"required": True, "allow_blank": False},
+            "hsn_code": {"required": True, "allow_blank": False},
+            **{
+                field: {"required": True, "allow_null": False}
+                for field in BOXED_PIECE_REQUIRED
+                if not field.endswith(("description", "code"))
+            },
+        }
 
 
 class ProductListSerializer(serializers.ModelSerializer):
@@ -187,6 +222,21 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
                     "Turn on is_multi_part first."
                 }
             )
+        else:
+            # It owns the box itself, so it answers for the box itself. A
+            # multi-part product is exempt: its parts were checked above.
+            missing = {
+                field: "Required."
+                for field in BOXED_PIECE_REQUIRED
+                if _unanswered(self.instance, attrs, field)
+            }
+            pack_per_box = attrs.get(
+                "pack_per_box", getattr(self.instance, "pack_per_box", 1)
+            )
+            if not pack_per_box or pack_per_box < 1:
+                missing["pack_per_box"] = "At least 1."
+            if missing:
+                raise serializers.ValidationError(missing)
 
         return attrs
 

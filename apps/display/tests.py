@@ -36,6 +36,36 @@ def product(style_no, weight, size):
     )
 
 
+def display_part(**overrides):
+    """A part complete enough to save. Tests override what they assert on."""
+    return {
+        "name": "Part",
+        "customs_description": "Decorative display part",
+        "hsn_code": "9505",
+        "product_weight_kg": "0.400",
+        "length_in": "12.00",
+        "width_in": "8.00",
+        "height_in": "3.00",
+        "sort_order": 0,
+        **overrides,
+    }
+
+
+def display_product(**overrides):
+    """A single-piece display product complete enough to save."""
+    return {
+        "style_no": "DSP-NEW-00",
+        "description": "Display item",
+        "customs_description": "Decorative display item",
+        "hsn_code": "9505",
+        "product_weight_kg": "0.500",
+        "length_in": "24.00",
+        "width_in": "24.00",
+        "height_in": "5.00",
+        **overrides,
+    }
+
+
 def store(name="MAIN"):
     return Store.objects.create(name=name)
 
@@ -321,6 +351,7 @@ class OrderLineStoreTests(APITestCase):
         return {
             "name": "Winter decor",
             "merchant": self.merchant.id,
+            "buyer_name": "Anthropologie Buying",
             "lines": lines,
         }
 
@@ -689,8 +720,8 @@ class DisplayProductShapeTests(APITestCase):
             "description": '24" Pine Wreath',
             "is_multi_part": True,
             "parts": [
-                {"name": "Frame", "product_weight_kg": "0.400", "sort_order": 0},
-                {"name": "Trim", "product_weight_kg": "0.150", "sort_order": 1},
+                display_part(name="Frame", product_weight_kg="0.400", sort_order=0),
+                display_part(name="Trim", product_weight_kg="0.150", sort_order=1),
             ],
         }
         body.update(overrides)
@@ -747,8 +778,8 @@ class DisplayProductShapeTests(APITestCase):
             f"{self.URL}{created['id']}/",
             {
                 "parts": [
-                    {"id": ids[0], "name": "Wire frame", "sort_order": 0},
-                    {"id": ids[1], "name": "Trim", "sort_order": 1},
+                    display_part(id=ids[0], name="Wire frame", sort_order=0),
+                    display_part(id=ids[1], name="Trim", sort_order=1),
                 ]
             },
             format="json",
@@ -766,8 +797,8 @@ class DisplayProductShapeTests(APITestCase):
             f"{self.URL}{created['id']}/",
             {
                 "parts": [
-                    {"id": ids[0], "name": "Frame", "sort_order": 0},
-                    {"name": "Bow", "sort_order": 1},
+                    display_part(id=ids[0], name="Frame", sort_order=0),
+                    display_part(name="Bow", sort_order=1),
                 ]
             },
             format="json",
@@ -1138,11 +1169,11 @@ class DisplayStyleNameTests(APITestCase):
     def test_style_name_round_trips(self):
         response = self.client.post(
             "/api/display-products/",
-            {
-                "style_no": "DSP-NEW-01",
-                "style_name": "Winter Garland",
-                "description": "Garland",
-            },
+            display_product(
+                style_no="DSP-NEW-01",
+                style_name="Winter Garland",
+                description="Garland",
+            ),
             format="json",
         )
 
@@ -1152,7 +1183,7 @@ class DisplayStyleNameTests(APITestCase):
     def test_style_name_is_optional(self):
         response = self.client.post(
             "/api/display-products/",
-            {"style_no": "DSP-NEW-02", "description": "No name"},
+            display_product(style_no="DSP-NEW-02", description="No name"),
             format="json",
         )
 
@@ -1186,7 +1217,12 @@ class DisplayOrderEditTests(APITestCase):
     def put(self, lines):
         return self.client.put(
             f"/api/display-orders/{self.order.id}/",
-            {"name": self.order.name, "merchant": self.merchant.id, "lines": lines},
+            {
+                "name": self.order.name,
+                "merchant": self.merchant.id,
+                "buyer_name": "Anthropologie Buying",
+                "lines": lines,
+            },
             format="json",
         )
 

@@ -17,6 +17,23 @@ def upload(name="photo.gif"):
     return SimpleUploadedFile(name, PIXEL_GIF, content_type="image/gif")
 
 
+def part_payload(**overrides):
+    """A part complete enough to save. Tests override only what they assert on."""
+    return {
+        "name": "Part",
+        "customs_description": "Wooden furniture part",
+        "hsn_code": "9403",
+        "box_length_in": "20.00",
+        "box_width_in": "14.00",
+        "box_height_in": "6.00",
+        "product_weight_kg": "4.000",
+        "packing_material_weight_kg": "0.200",
+        "box_weight_kg": "0.500",
+        "sort_order": 0,
+        **overrides,
+    }
+
+
 class ProductShapeTests(APITestCase):
     """`is_multi_part` decides how every carton for the SKU is built."""
 
@@ -54,8 +71,8 @@ class ProductShapeTests(APITestCase):
             "description": "Table",
             "is_multi_part": True,
             "parts": [
-                {"id": self.parts[0].pk, "name": "Table top", "sort_order": 0},
-                {"id": self.parts[1].pk, "name": "Legs set", "sort_order": 1},
+                part_payload(id=self.parts[0].pk, name="Table top", sort_order=0),
+                part_payload(id=self.parts[1].pk, name="Legs set", sort_order=1),
             ],
         }
         response = self.client.put(
@@ -76,8 +93,8 @@ class ProductShapeTests(APITestCase):
             "description": "Table",
             "is_multi_part": True,
             "parts": [
-                {"id": self.parts[0].pk, "name": "Top", "sort_order": 0},
-                {"name": "Fixings", "sort_order": 1},
+                part_payload(id=self.parts[0].pk, name="Top", sort_order=0),
+                part_payload(name="Fixings", sort_order=1),
             ],
         }
         response = self.client.put(

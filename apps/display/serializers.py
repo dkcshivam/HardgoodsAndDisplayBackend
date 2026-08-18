@@ -34,6 +34,28 @@ class DisplayProductImageSerializer(serializers.ModelSerializer):
         return attrs
 
 
+def _unanswered(instance, attrs, field) -> bool:
+    """
+    Blank on the way in and blank on the row already. Falling back to the
+    instance keeps a PATCH of one field from failing on the others.
+    """
+    value = attrs.get(field, getattr(instance, field, None))
+    return value is None or value == ""
+
+
+#: A display product owns no box, so what it must answer for is itself: the
+#: customs lines it clears on, and the size and weight a template checks a
+#: carton's fit against.
+PIECE_REQUIRED = [
+    "customs_description",
+    "hsn_code",
+    "product_weight_kg",
+    "length_in",
+    "width_in",
+    "height_in",
+]
+
+
 class DisplayProductPartSerializer(serializers.ModelSerializer):
     # Kept on write so an edit can match a payload row to the part it edits;
     # without it every save would recreate the parts and orphan the template
@@ -58,6 +80,18 @@ class DisplayProductPartSerializer(serializers.ModelSerializer):
             "unit_cbm",
             "sort_order",
         ]
+        # A part is packed on its own, so it answers on its own — the product
+        # above holds none of these for a multi-part SKU.
+        extra_kwargs = {
+            "name": {"required": True, "allow_blank": False},
+            "customs_description": {"required": True, "allow_blank": False},
+            "hsn_code": {"required": True, "allow_blank": False},
+            **{
+                field: {"required": True, "allow_null": False}
+                for field in PIECE_REQUIRED
+                if field.endswith(("_kg", "_in"))
+            },
+        }
 
 
 class DisplayProductSerializer(serializers.ModelSerializer):
@@ -127,6 +161,16 @@ class DisplayProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"parts": "A single-piece product has no parts."}
             )
+        else:
+            # Handled whole, so it answers whole. A multi-part product is
+            # exempt: its parts were checked by their own serializer.
+            missing = {
+                field: "Required."
+                for field in PIECE_REQUIRED
+                if _unanswered(self.instance, attrs, field)
+            }
+            if missing:
+                raise serializers.ValidationError(missing)
 
         return attrs
 
@@ -370,6 +414,9 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["number", "status"]
+        # The packing list prints it and a customs broker reads it, so an
+        # order without a buyer is one somebody has to chase later.
+        extra_kwargs = {"buyer_name": {"required": True, "allow_blank": False}}
 
     def validate(self, attrs):
         lines = attrs.get("lines")

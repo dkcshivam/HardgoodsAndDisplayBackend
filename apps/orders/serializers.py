@@ -97,6 +97,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["number", "status"]
+        # The packing list prints it and a customs broker reads it, so an
+        # order without a buyer is one somebody has to chase later.
+        extra_kwargs = {"buyer_name": {"required": True, "allow_blank": False}}
 
     def get_shipping_address(self, obj) -> dict:
         return {
