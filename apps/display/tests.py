@@ -591,6 +591,37 @@ class DisplayPackingListTests(APITestCase):
             [cell.value for cell in row] for row in book[self.order.number].iter_rows()
         ]
 
+
+    def test_the_json_document_blocks_by_store_like_the_sheet(self):
+        """One builder feeds both, so the PDF and the .xlsx cannot drift."""
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        services.apply_step(self.order, self.tpl, self.austin, count=1)
+
+        response = self.client.get(
+            f"/api/display-orders/{self.order.id}/packing-list-data/"
+        )
+        self.assertEqual(response.status_code, 200)
+        document = response.data
+
+        self.assertEqual(len(document["blocks"]), 2)
+        self.assertIn("STORE 118", document["blocks"][0]["banner"])
+        self.assertIn("Portland", document["blocks"][0]["banner"])
+
+        banners = [row for row in self.rows() if row[0] and "STORE" in str(row[0])]
+        self.assertEqual(
+            [block["banner"] for block in document["blocks"]],
+            [row[0] for row in banners],
+        )
+
+        # Every store subtotal, added up, is the order total the footer prints.
+        quantity = document["columns"].index(
+            next(c for c in document["columns"] if c["label"] == "Qty / Box")
+        )
+        self.assertEqual(
+            sum(block["subtotal"][quantity] for block in document["blocks"]),
+            document["total"][quantity],
+        )
+
     def test_no_cartons_is_a_400_not_an_empty_sheet(self):
         response = self.client.get(self.url())
         self.assertEqual(response.status_code, 400)

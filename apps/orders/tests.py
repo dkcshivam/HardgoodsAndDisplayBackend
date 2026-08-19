@@ -329,6 +329,34 @@ class PackingListTests(OrderFixture):
         self.assertEqual(rows[1][self.RANGE], "BOX-002 – BOX-003")
         self.assertEqual(rows[1][self.COUNT], 2)
 
+
+    def test_the_json_document_carries_exactly_what_the_sheet_does(self):
+        """
+        The print page and the workbook come off one builder, so a PDF signed
+        at the desk cannot quote a figure the emailed sheet disagrees with.
+        """
+        self.client.post(self.url("auto-pack"))
+
+        response = self.client.get(self.url("packing-list-data"))
+        self.assertEqual(response.status_code, 200)
+        document = response.data
+
+        # openpyxl reads a written "" back as an empty cell.
+        printed = [
+            [value if value != "" else None for value in row["values"]]
+            for block in document["blocks"]
+            for row in block["rows"]
+        ]
+        self.assertEqual(printed, [list(row) for row in self.rows()])
+
+        footer = list(self.totals())
+        for column in (self.QTY, self.NNW, self.NET, self.GROSS, self.CBM):
+            self.assertEqual(document["total"][column], footer[column])
+
+    def test_the_json_document_needs_cartons_too(self):
+        response = self.client.get(self.url("packing-list-data"))
+        self.assertEqual(response.status_code, 400)
+
     def test_the_filename_names_the_order(self):
         self.client.post(self.url("auto-pack"))
         response = self.client.get(self.url("packing-list"))

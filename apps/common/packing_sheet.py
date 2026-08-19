@@ -443,3 +443,110 @@ def write_totals(
         cell.border = Border(top=Side(style="double", color="9AA2B1"))
         cell.number_format = number_format or "0"
         cell.alignment = Alignment(horizontal="right")
+
+
+# ── Document ─────────────────────────────────────────────────────────
+#
+# What the packing list says, with nothing about how it is drawn. The
+# workbook and the print page both render this, so the .xlsx a broker files
+# and the PDF the desk signs cannot drift apart.
+
+
+@dataclass
+class Block:
+    """A run of rows under one banner — for Display, one store."""
+
+    rows: list = field(default_factory=list)  # (values, opens)
+    banner: str = ""
+    subtotal_label: str = ""
+    subtotal: "Totals | None" = None
+
+
+@dataclass
+class Document:
+    title: str
+    facts: list
+    blocks: list
+    total: Totals
+    total_label: str
+    layout: Layout = BASE
+
+
+def write_document(sheet, doc: Document) -> None:
+    set_widths(sheet, doc.layout)
+
+    sheet.cell(row=1, column=1, value=doc.title).font = Font(bold=True, size=15)
+    row = write_facts(sheet, 2, doc.facts)
+
+    header_row = row + 1
+    write_column_headers(sheet, header_row, doc.layout)
+    row = header_row + 1
+    first_data_row = row
+
+    for block in doc.blocks:
+        if block.banner:
+            write_banner(sheet, row, block.banner, doc.layout)
+            row += 1
+        for values, opens in block.rows:
+            write_row(sheet, row, values, doc.layout, opens=opens)
+            row += 1
+        if block.subtotal is not None:
+            write_totals(
+                sheet, row, block.subtotal, block.subtotal_label, doc.layout
+            )
+            row += 2
+
+    write_totals(sheet, row, doc.total, doc.total_label, doc.layout)
+    sheet.freeze_panes = sheet.cell(row=first_data_row, column=1)
+
+
+def places(number_format: str | None) -> int | None:
+    """Decimal places from an Excel format, so the page can round the same."""
+    if not number_format:
+        return None
+    _, _, fraction = number_format.partition(".")
+    return len(fraction)
+
+
+def plain(value):
+    """Decimals go out as numbers — the API does not stringify them."""
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
+
+
+def _totals_row(totals: "Totals | None", layout: Layout) -> list | None:
+    if totals is None or totals.cartons == 0:
+        return None
+    figures = totals.by_column()
+    return [
+        plain(figures.get(label)) if label in layout.totalled else None
+        for label, _, _ in layout.columns
+    ]
+
+
+def document_json(doc: Document) -> dict:
+    return {
+        "title": doc.title,
+        "facts": [
+            {"label": label, "value": value} for label, value in doc.facts if value
+        ],
+        "columns": [
+            {"label": label, "places": places(number_format)}
+            for label, _, number_format in doc.layout.columns
+        ],
+        "blocks": [
+            {
+                "banner": block.banner,
+                "rows": [
+                    {"opens": opens, "values": [plain(value) for value in values]}
+                    for values, opens in block.rows
+                ],
+                "subtotal_label": block.subtotal_label,
+                "subtotal": _totals_row(block.subtotal, doc.layout),
+            }
+            for block in doc.blocks
+        ],
+        "total_label": doc.total_label,
+        "total": _totals_row(doc.total, doc.layout),
+    }

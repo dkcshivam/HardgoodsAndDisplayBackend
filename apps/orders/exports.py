@@ -12,7 +12,6 @@ from decimal import Decimal
 from io import BytesIO
 
 from openpyxl import Workbook
-from openpyxl.styles import Font
 
 from apps.common import invoice_sheet as invoice_kit
 from apps.common import packing_sheet as sheet_kit
@@ -39,54 +38,22 @@ def packing_list_filename(order: Order) -> str:
     return f"packing-list-{order.number}.xlsx"
 
 
-def build_packing_list(order: Order) -> BytesIO:
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = order.number
-
-    sheet_kit.set_widths(sheet)
-
-    row = _write_heading(sheet, order)
-    header_row = row + 1
-    sheet_kit.write_column_headers(sheet, header_row)
-
-    row = header_row + 1
-    first_data_row = row
-
+def packing_document(order: Order) -> sheet_kit.Document:
     cartons = list(
         order.cartons.prefetch_related("contents__product", "contents__part")
     )
 
     totals = sheet_kit.Totals()
+    rows = []
     for group in sheet_kit.group_cartons(cartons):
         totals.add(group)
         for position, values in enumerate(group.rows()):
-            sheet_kit.write_row(sheet, row, values, opens=position == 0)
-            row += 1
+            rows.append((values, position == 0))
 
     count = totals.cartons
-    sheet_kit.write_totals(
-        sheet,
-        row,
-        totals,
-        f"TOTAL · all {count} box{'es' if count != 1 else ''}",
-    )
-    sheet.freeze_panes = sheet.cell(row=first_data_row, column=1)
-
-    stream = BytesIO()
-    workbook.save(stream)
-    stream.seek(0)
-    return stream
-
-
-def _write_heading(sheet, order: Order) -> int:
-    title = sheet.cell(row=1, column=1, value="PACKING LIST")
-    title.font = Font(bold=True, size=15)
-
-    return sheet_kit.write_facts(
-        sheet,
-        2,
-        [
+    return sheet_kit.Document(
+        title="PACKING LIST",
+        facts=[
             ("Order", order.number),
             ("Name", order.name),
             ("Merchant", order.merchant.name),
@@ -94,7 +61,23 @@ def _write_heading(sheet, order: Order) -> int:
             ("Ship to", _address(order)),
             ("Status", order.get_status_display()),
         ],
+        blocks=[sheet_kit.Block(rows=rows)],
+        total=totals,
+        total_label=f"TOTAL · all {count} box{'es' if count != 1 else ''}",
     )
+
+
+def build_packing_list(order: Order) -> BytesIO:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = order.number
+
+    sheet_kit.write_document(sheet, packing_document(order))
+
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+    return stream
 
 
 def _address(order: Order) -> str:
@@ -109,7 +92,7 @@ def _address(order: Order) -> str:
     return ", ".join(part for part in parts if part)
 
 
-def build_invoice(order: Order) -> BytesIO:
+def invoice_document(order: Order) -> invoice_kit.Document:
     """
     One row per style across the whole order, priced from the order lines.
 
@@ -118,21 +101,6 @@ def build_invoice(order: Order) -> BytesIO:
     piece of it has a box. That keeps this document and the packing list
     agreeing on a single number, which is the pair a broker checks first.
     """
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "Invoice"
-
-    invoice_kit.set_widths(sheet)
-    row = invoice_kit.write_heading(
-        sheet,
-        exporter=EXPORTER,
-        consignee=[order.buyer_name or order.merchant.name],
-        ship_to=[part for part in _address(order).split(", ") if part],
-    )
-
-    invoice_kit.write_column_headers(sheet, row)
-    row += 1
-
     lines = {line.product_id: line for line in order.lines.select_related("product")}
     invoice = invoice_kit.Invoice()
 
@@ -151,12 +119,20 @@ def build_invoice(order: Order) -> BytesIO:
             rate=line.rate_usd,
         )
 
-    for serial, entry in enumerate(invoice.ordered(), start=1):
-        invoice_kit.write_line(sheet, row, entry.row(serial))
-        row += 1
+    return invoice_kit.Document(
+        exporter=EXPORTER,
+        consignee=[order.buyer_name or order.merchant.name],
+        ship_to=[part for part in _address(order).split(", ") if part],
+        invoice=invoice,
+    )
 
-    row = invoice_kit.write_totals(sheet, row, invoice)
-    invoice_kit.write_footer(sheet, row, invoice, EXPORTER[0])
+
+def build_invoice(order: Order) -> BytesIO:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Invoice"
+
+    invoice_kit.write_document(sheet, invoice_document(order))
 
     stream = BytesIO()
     workbook.save(stream)

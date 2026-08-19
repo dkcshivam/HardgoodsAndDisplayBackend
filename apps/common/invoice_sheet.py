@@ -43,6 +43,15 @@ COLUMNS = [
 
 SERIAL, STYLE, HTS, DESCRIPTION, QTY, NET, RATE, AMOUNT = range(8)
 
+ORIGIN_LINE = "COUNTRY OF ORIGIN OF GOODS — INDIA"
+IGST_NOTE = "Note: IGST is paid under the refund mechanism; no charge to the buyer."
+SIGNATORY = "Authorised Signatory"
+DECLARATION = [
+    "We declare that this invoice shows the actual price of the goods",
+    "described and that all particulars are true and correct.",
+]
+
+
 #: Left blank for the desk. Each is one labelled cell with room under it.
 SHIPMENT_FIELDS = [
     ("Invoice No & Date", "P.O. No.", "L/C No"),
@@ -254,7 +263,7 @@ def write_footer(sheet, row: int, invoice: Invoice, exporter_name: str) -> None:
     row += 1
 
     sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=last)
-    origin = sheet.cell(row=row, column=1, value="COUNTRY OF ORIGIN OF GOODS — INDIA")
+    origin = sheet.cell(row=row, column=1, value=ORIGIN_LINE)
     origin.font = Font(bold=True)
     row += 2
 
@@ -274,23 +283,16 @@ def write_footer(sheet, row: int, invoice: Invoice, exporter_name: str) -> None:
         row += 2
 
     sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=last)
-    sheet.cell(
-        row=row,
-        column=1,
-        value="Note: IGST is paid under the refund mechanism; no charge to the buyer.",
-    ).font = Font(size=9)
+    sheet.cell(row=row, column=1, value=IGST_NOTE).font = Font(size=9)
     row += 2
 
     declaration = sheet.cell(row=row, column=1, value="Declaration:")
     declaration.font = Font(bold=True)
-    signatory = sheet.cell(row=row, column=RATE, value="Authorised Signatory")
+    signatory = sheet.cell(row=row, column=RATE, value=SIGNATORY)
     signatory.font = Font(bold=True)
     row += 1
 
-    for text in (
-        "We declare that this invoice shows the actual price of the goods",
-        "described and that all particulars are true and correct.",
-    ):
+    for text in DECLARATION:
         sheet.cell(row=row, column=1, value=text).font = Font(size=9)
         row += 1
 
@@ -343,3 +345,83 @@ def amount_in_words(amount: Decimal) -> str:
     words = _spell(whole)
     return f"{words} AND {cents:02d}/100 ONLY"
 
+
+
+# ── Document ─────────────────────────────────────────────────────────
+#
+# The invoice as data. The workbook and the print page render this same
+# object, so the sheet emailed to the broker and the PDF signed at the desk
+# carry identical figures and identical wording.
+
+
+@dataclass
+class Document:
+    exporter: list
+    consignee: list
+    ship_to: list
+    invoice: Invoice
+    origin: str = "INDIA"
+
+
+def write_document(sheet, doc: Document) -> None:
+    set_widths(sheet)
+    row = write_heading(sheet, doc.exporter, doc.consignee, doc.ship_to)
+
+    write_column_headers(sheet, row)
+    row += 1
+
+    for serial, line in enumerate(doc.invoice.ordered(), start=1):
+        write_line(sheet, row, line.row(serial))
+        row += 1
+
+    row = write_totals(sheet, row, doc.invoice)
+    write_footer(sheet, row, doc.invoice, doc.exporter[0])
+
+
+def _places(number_format: str | None) -> int | None:
+    if not number_format:
+        return None
+    _, _, fraction = number_format.partition(".")
+    return len(fraction)
+
+
+def _plain(value):
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
+
+
+def document_json(doc: Document) -> dict:
+    invoice = doc.invoice
+    return {
+        "title": "COMMERCIAL INVOICE",
+        "exporter": doc.exporter,
+        "consignee": doc.consignee,
+        "ship_to": doc.ship_to,
+        "origin": doc.origin,
+        "shipment_fields": [list(group) for group in SHIPMENT_FIELDS],
+        "columns": [
+            {"label": label, "places": _places(number_format)}
+            for label, _, number_format in COLUMNS
+        ],
+        "lines": [
+            [_plain(value) for value in line.row(serial)]
+            for serial, line in enumerate(invoice.ordered(), start=1)
+        ],
+        "total": {
+            "quantity": invoice.total_quantity,
+            "net_weight_kg": _plain(invoice.total_net_weight_kg),
+            "amount_usd": _plain(invoice.total_amount_usd)
+            if invoice.is_priced
+            else None,
+        },
+        "is_priced": invoice.is_priced,
+        "amount_in_words": amount_in_words(invoice.total_amount_usd)
+        if invoice.is_priced
+        else "",
+        "origin_line": ORIGIN_LINE,
+        "note": IGST_NOTE,
+        "declaration": DECLARATION,
+        "signatory": SIGNATORY,
+        "for_exporter": f"for {doc.exporter[0]}",
+    }

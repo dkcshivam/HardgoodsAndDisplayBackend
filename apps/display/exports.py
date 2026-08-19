@@ -16,7 +16,6 @@ from decimal import Decimal
 from io import BytesIO
 
 from openpyxl import Workbook
-from openpyxl.styles import Font
 
 from apps.common import invoice_sheet as invoice_kit
 from apps.common import packing_sheet as sheet_kit
@@ -69,21 +68,7 @@ def _for_sheet(values: list) -> list:
     return [values[index] for index in _KEPT]
 
 
-def build_packing_list(order: DisplayOrder) -> BytesIO:
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = order.number
-
-    sheet_kit.set_widths(sheet, LAYOUT)
-
-    row = _write_heading(sheet, order)
-    header_row = row + 1
-    sheet_kit.write_column_headers(sheet, header_row, LAYOUT)
-
-    row = header_row + 1
-    first_data_row = row
-    order_totals = sheet_kit.Totals()
-
+def packing_document(order: DisplayOrder) -> sheet_kit.Document:
     cartons = list(
         order.cartons.select_related("store").prefetch_related(
             "contents__product", "contents__part"
@@ -93,41 +78,57 @@ def build_packing_list(order: DisplayOrder) -> BytesIO:
     for carton in cartons:
         by_store.setdefault(carton.store_id, []).append(carton)
 
+    order_totals = sheet_kit.Totals()
+    blocks = []
+
     for store in _stores_in_order(order, by_store):
-        block = by_store.get(store.id, [])
-        if not block:
+        cartons_here = by_store.get(store.id, [])
+        if not cartons_here:
             continue
 
-        sheet_kit.write_banner(sheet, row, _store_label(store), LAYOUT)
-        row += 1
-
         store_totals = sheet_kit.Totals()
-        for group in sheet_kit.group_cartons(block):
+        rows = []
+        for group in sheet_kit.group_cartons(cartons_here):
             store_totals.add(group)
             for position, values in enumerate(group.rows()):
-                sheet_kit.write_row(
-                    sheet, row, _for_sheet(values), LAYOUT, opens=position == 0
-                )
-                row += 1
+                rows.append((_for_sheet(values), position == 0))
 
-        sheet_kit.write_totals(
-            sheet,
-            row,
-            store_totals,
-            f"{store.name} subtotal · all {_boxes(store_totals.cartons)}",
-            LAYOUT,
+        blocks.append(
+            sheet_kit.Block(
+                rows=rows,
+                banner=_store_label(store),
+                subtotal=store_totals,
+                subtotal_label=(
+                    f"{store.name} subtotal · all {_boxes(store_totals.cartons)}"
+                ),
+            )
         )
         order_totals.merge(store_totals)
-        row += 2
 
-    sheet_kit.write_totals(
-        sheet,
-        row,
-        order_totals,
-        f"ORDER TOTAL · all {_boxes(order_totals.cartons)}",
-        LAYOUT,
+    stores = {line.store_id for line in order.lines.all()}
+    return sheet_kit.Document(
+        title="PACKING LIST",
+        facts=[
+            ("Order", order.number),
+            ("Name", order.name),
+            ("Merchant", order.merchant.name),
+            ("Buyer", order.buyer_name),
+            ("Stores", f"{len(stores)}"),
+            ("Status", order.get_status_display()),
+        ],
+        blocks=blocks,
+        total=order_totals,
+        total_label=f"ORDER TOTAL · all {_boxes(order_totals.cartons)}",
+        layout=LAYOUT,
     )
-    sheet.freeze_panes = sheet.cell(row=first_data_row, column=1)
+
+
+def build_packing_list(order: DisplayOrder) -> BytesIO:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = order.number
+
+    sheet_kit.write_document(sheet, packing_document(order))
 
     stream = BytesIO()
     workbook.save(stream)
@@ -150,25 +151,6 @@ def _stores_in_order(order: DisplayOrder, by_store: dict) -> list:
     return stores
 
 
-def _write_heading(sheet, order: DisplayOrder) -> int:
-    title = sheet.cell(row=1, column=1, value="PACKING LIST")
-    title.font = Font(bold=True, size=15)
-
-    stores = {line.store_id for line in order.lines.all()}
-    return sheet_kit.write_facts(
-        sheet,
-        2,
-        [
-            ("Order", order.number),
-            ("Name", order.name),
-            ("Merchant", order.merchant.name),
-            ("Buyer", order.buyer_name),
-            ("Stores", f"{len(stores)}"),
-            ("Status", order.get_status_display()),
-        ],
-    )
-
-
 def _store_label(store) -> str:
     address = ", ".join(
         part
@@ -186,7 +168,7 @@ def _store_label(store) -> str:
     return f"{head} — {address}" if address else head
 
 
-def build_invoice(order: DisplayOrder) -> BytesIO:
+def invoice_document(order: DisplayOrder) -> invoice_kit.Document:
     """
     One row per style across the whole order, priced from the order's rates.
 
@@ -195,21 +177,6 @@ def build_invoice(order: DisplayOrder) -> BytesIO:
     piece of it has a box. That keeps this document and the packing list
     agreeing on a single number, which is the pair a broker checks first.
     """
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "Invoice"
-
-    invoice_kit.set_widths(sheet)
-    row = invoice_kit.write_heading(
-        sheet,
-        exporter=EXPORTER,
-        consignee=[order.buyer_name or order.merchant.name],
-        ship_to=[f"{len(set(line.store_id for line in order.lines.all()))} stores"],
-    )
-
-    invoice_kit.write_column_headers(sheet, row)
-    row += 1
-
     rates = {rate.product_id: rate.rate_usd for rate in order.rates.all()}
     packed = Counter()
     for line in services.reconcile(order):
@@ -237,12 +204,21 @@ def build_invoice(order: DisplayOrder) -> BytesIO:
             rate=rates.get(product_id),
         )
 
-    for serial, line in enumerate(invoice.ordered(), start=1):
-        invoice_kit.write_line(sheet, row, line.row(serial))
-        row += 1
+    stores = len({line.store_id for line in order.lines.all()})
+    return invoice_kit.Document(
+        exporter=EXPORTER,
+        consignee=[order.buyer_name or order.merchant.name],
+        ship_to=[f"{stores} stores"],
+        invoice=invoice,
+    )
 
-    row = invoice_kit.write_totals(sheet, row, invoice)
-    invoice_kit.write_footer(sheet, row, invoice, EXPORTER[0])
+
+def build_invoice(order: DisplayOrder) -> BytesIO:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Invoice"
+
+    invoice_kit.write_document(sheet, invoice_document(order))
 
     stream = BytesIO()
     workbook.save(stream)

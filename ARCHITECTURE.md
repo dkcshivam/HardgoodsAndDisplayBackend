@@ -522,6 +522,16 @@ ports, vessel, container, LC and shipping mark change per shipment and the app
 holds none of them. Our own letterhead, the consignee and India as the country
 of origin do print.
 
+### One document, two renderings
+
+Both documents are built as data first — `packing_sheet.Document` and
+`invoice_sheet.Document` — and rendered twice: `write_document()` draws the
+workbook, `document_json()` hands the same object to the front end, which
+draws the print page the desk saves as a PDF. Column labels, decimal places,
+subtotals, the declaration and the amount in words all travel in the payload,
+so nothing about either document is written down twice. A sheet emailed to a
+broker and a PDF signed at the desk cannot quote different figures.
+
 ### Status ladder
 
 ```
@@ -661,6 +671,9 @@ Base: `/api/`. DRF `PageNumberPagination`, page size 50.
 | `/orders/{id}/auto-pack/` | POST | build and apply a proposed plan |
 | `/orders/{id}/advance-status/` | POST | one rung up the ladder; gated at `packed` |
 | `/orders/{id}/packing-list/` | GET | the plan as `.xlsx`; 400 while the order has no cartons |
+| `/orders/{id}/packing-list-data/` | GET | the same document as JSON, for the print page |
+| `/orders/{id}/invoice/` | GET | the commercial invoice as `.xlsx` |
+| `/orders/{id}/invoice-data/` | GET | the same invoice as JSON |
 
 `GET /orders/{id}/packing/` returns everything the packing screen needs to render
 itself in a single response.
@@ -680,6 +693,9 @@ itself in a single response.
 | `/display-orders/{id}/replicate/` | POST | copy one `store`'s steps onto every identical unpacked store (§10.4.2) |
 | `/display-orders/{id}/advance-status/` | POST | as Hardgoods |
 | `/display-orders/{id}/packing-list/` | GET | `.xlsx`, blocked by store per §10.8 |
+| `/display-orders/{id}/packing-list-data/` | GET | the same document as JSON, for the print page |
+| `/display-orders/{id}/invoice/` | GET | the commercial invoice as `.xlsx` |
+| `/display-orders/{id}/invoice-data/` | GET | the same invoice as JSON |
 
 `POST /steps/` without a `count` applies the maximum — the common case, and the
 one that makes the loop a single click per template.

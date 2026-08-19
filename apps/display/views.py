@@ -6,10 +6,15 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from . import services
+from apps.common import invoice_sheet as invoice_kit
+from apps.common import packing_sheet as sheet_kit
+
 from .exports import (
     build_invoice,
     build_packing_list,
+    invoice_document,
     invoice_filename,
+    packing_document,
     packing_list_filename,
 )
 from .models import (
@@ -391,6 +396,36 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             ),
         )
+
+    @action(detail=True, methods=["get"], url_path="packing-list-data")
+    def packing_list_data(self, request, pk=None):
+        """
+        The same document as the .xlsx, as JSON, for the print page to draw.
+
+        One builder feeds both, so a PDF signed at the desk and a sheet
+        emailed to the broker can never quote different figures.
+        """
+        order = self.get_object()
+
+        if not order.cartons.exists():
+            return Response(
+                {"detail": "There are no cartons to list yet. Pack a store first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(sheet_kit.document_json(packing_document(order)))
+
+    @action(detail=True, methods=["get"], url_path="invoice-data")
+    def invoice_data(self, request, pk=None):
+        order = self.get_object()
+
+        if not order.cartons.exists():
+            return Response(
+                {"detail": "There is nothing to invoice yet — pack the order first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(invoice_kit.document_json(invoice_document(order)))
 
     @action(detail=True, methods=["post"], url_path="advance-status")
     def advance_status(self, request, pk=None):
