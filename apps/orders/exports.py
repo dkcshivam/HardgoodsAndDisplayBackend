@@ -36,24 +36,23 @@ def build_packing_list(order: Order) -> BytesIO:
     row = header_row + 1
     first_data_row = row
 
-    # Colour is a property of this order, not of the product recipe.
-    colors = {line.product_id: line.color for line in order.lines.all()}
-
     cartons = list(
         order.cartons.prefetch_related("contents__product", "contents__part")
     )
 
+    totals = sheet_kit.Totals()
     for group in sheet_kit.group_cartons(cartons):
-        for values in group.rows(lambda c, _carton: colors.get(c.product_id, "")):
+        totals.add(group)
+        for values in group.rows():
             sheet_kit.write_row(sheet, row, values)
             row += 1
 
-    count = len(cartons)
+    count = totals.cartons
     sheet_kit.write_totals(
         sheet,
         row,
-        [(first_data_row, row - 1)],
-        f"TOTAL · {count} carton{'s' if count != 1 else ''}",
+        totals,
+        f"TOTAL · all {count} box{'es' if count != 1 else ''}",
     )
     sheet.freeze_panes = sheet.cell(row=first_data_row, column=1)
 

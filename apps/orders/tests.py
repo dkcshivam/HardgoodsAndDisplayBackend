@@ -6,6 +6,7 @@ from openpyxl import load_workbook
 from rest_framework.test import APITestCase
 
 from apps.catalog.models import Product, ProductPart
+from apps.common import packing_sheet as sheet_kit
 from apps.masters.models import Merchant
 
 from .models import Order, OrderLine
@@ -173,10 +174,10 @@ class PackingListTests(OrderFixture):
     """The Excel document the shipping desk sends out."""
 
     # Column positions, as the sheet lays them out.
-    RANGE, COUNT, STYLE, COLOR, DESCRIPTION = 0, 1, 2, 3, 4
-    QTY, TOTAL_QTY = 5, 6
-    NET, TOTAL_NET, GROSS, TOTAL_GROSS = 7, 8, 9, 10
-    LENGTH, WIDTH, HEIGHT, CBM, TOTAL_CBM = 11, 12, 13, 14, 15
+    RANGE, COUNT, STYLE, DESCRIPTION = 0, 1, 2, 3
+    QTY, UNITS = 4, 5
+    NNW, NET, GROSS = 6, 7, 8
+    LENGTH, WIDTH, HEIGHT, CBM = 9, 10, 11, 12
 
     def rows(self):
         """Data rows only — between the column headers and the totals."""
@@ -193,6 +194,15 @@ class PackingListTests(OrderFixture):
                 break
             found.append(row)
         return found
+
+    def totals(self):
+        """The footer row — the shipment, not a sum of the columns above."""
+        response = self.client.get(self.url("packing-list"))
+        sheet = load_workbook(BytesIO(b"".join(response.streaming_content))).active
+        values = list(sheet.iter_rows(values_only=True))
+        return next(
+            row for row in values if row[0] and str(row[0]).startswith("TOTAL")
+        )
 
     def repack(self, edit):
         """Auto-pack, let `edit` change the plan, then save it back."""
@@ -248,32 +258,61 @@ class PackingListTests(OrderFixture):
         self.assertEqual(chairs[self.RANGE], "BOX-001 – BOX-002, BOX-009")
         self.assertEqual(chairs[self.COUNT], 3)
 
-    def test_totals_multiply_the_per_carton_figures(self):
+    def test_a_row_describes_one_box_however_many_it_stands_for(self):
         self.client.post(self.url("auto-pack"))
         chairs = self.rows()[0]
         carton = self.order.cartons.first()
 
-        self.assertEqual(chairs[self.QTY], 2)
-        self.assertEqual(chairs[self.TOTAL_QTY], 6)
+        self.assertEqual(chairs[self.COUNT], 3)
+        self.assertEqual(chairs[self.QTY], 2)  # not 6
+        self.assertEqual(chairs[self.UNITS], "PCS")
         self.assertEqual(Decimal(str(chairs[self.GROSS])), carton.gross_weight_kg)
-        self.assertEqual(
-            Decimal(str(chairs[self.TOTAL_GROSS])), carton.gross_weight_kg * 3
-        )
-        self.assertEqual(Decimal(str(chairs[self.TOTAL_CBM])), carton.cbm * 3)
+        self.assertEqual(Decimal(str(chairs[self.NET])), carton.net_weight_kg)
 
-    def test_a_row_carries_the_box_size_and_the_order_colour(self):
+    def test_the_footer_counts_the_boxes_the_columns_do_not(self):
+        """
+        Every figure on a row is one box's, so the shipment total cannot be
+        the sum of the column — it has to multiply each row by its run.
+        """
         self.client.post(self.url("auto-pack"))
+        totals = self.totals()
         rows = self.rows()
+
+        self.assertEqual(totals[self.COUNT], 7)
+        self.assertEqual(
+            totals[self.QTY],
+            sum(row[self.QTY] * row[self.COUNT] for row in rows),
+        )
+        self.assertGreater(totals[self.QTY], sum(row[self.QTY] for row in rows))
+
+    def test_a_row_carries_the_box_size_in_centimetres(self):
+        self.client.post(self.url("auto-pack"))
+        row = self.rows()[0]
         carton = self.order.cartons.first()
 
+        # Excel hands the numbers back as floats, so compare on value.
         self.assertEqual(
-            [rows[0][self.LENGTH], rows[0][self.WIDTH], rows[0][self.HEIGHT]],
-            [carton.length_in, carton.width_in, carton.height_in],
+            [Decimal(str(row[side])) for side in (self.LENGTH, self.WIDTH, self.HEIGHT)],
+            [
+                sheet_kit.cm(carton.length_in),
+                sheet_kit.cm(carton.width_in),
+                sheet_kit.cm(carton.height_in),
+            ],
         )
 
-        colors = {row[self.STYLE]: row[self.COLOR] for row in rows}
-        self.assertEqual(colors["CHR-01"], "Charcoal Wash")
-        self.assertEqual(colors["TBL-01"], "Natural Oak")
+    def test_the_printed_cbm_multiplies_out_from_the_printed_sides(self):
+        """A broker rechecking the arithmetic on the page has to arrive at it."""
+        self.client.post(self.url("auto-pack"))
+        row = self.rows()[0]
+
+        sides = Decimal(str(row[self.LENGTH]))
+        sides *= Decimal(str(row[self.WIDTH]))
+        sides *= Decimal(str(row[self.HEIGHT]))
+
+        self.assertEqual(
+            Decimal(str(row[self.CBM])),
+            (sides / Decimal("1000000")).quantize(Decimal("0.0001")),
+        )
 
     def test_a_carton_weighed_differently_gets_its_own_row(self):
         """The whole point of collapsing is that the merged cartons really

@@ -13,41 +13,72 @@ Everything here is duck-typed against a carton: `carton_no`, `contents`,
 
 import re
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 # label, width, number format
+#
+# The order and the wording follow the packing list the shipping desk already
+# sends out by hand: what is in the box, then its three weights, then the box
+# itself. Every figure describes **one** box, however many boxes the row
+# stands for — the footer carries the shipment.
 COLUMNS = [
     ("Carton Nos", 20, None),
     ("Cartons", 8, "0"),
     ("Style No", 18, None),
-    ("Color", 15, None),
-    ("Description", 32, None),
-    ("Qty / Ctn", 9, "0"),
-    ("Total Qty", 10, "0"),
-    ("N.W. / Ctn (kg)", 14, "0.000"),
-    ("Total N.W. (kg)", 14, "0.000"),
-    ("G.W. / Ctn (kg)", 14, "0.000"),
-    ("Total G.W. (kg)", 14, "0.000"),
-    ("L (in)", 8, "0.00"),
-    ("W (in)", 8, "0.00"),
-    ("H (in)", 8, "0.00"),
-    ("CBM / Ctn", 11, "0.0000"),
-    ("Total CBM", 11, "0.0000"),
+    ("Customs Description", 34, None),
+    ("Qty / Box", 9, "0"),
+    ("Units", 8, None),
+    ("NNW (kg)", 11, "0.000"),
+    ("N.W. (kg)", 11, "0.000"),
+    ("G.W. (kg)", 11, "0.000"),
+    ("L (cm)", 9, "0.0"),
+    ("W (cm)", 9, "0.0"),
+    ("H (cm)", 9, "0.0"),
+    ("CBM", 10, "0.0000"),
 ]
 
-# Only the totals columns. Summing a per-carton figure would count one box
-# once and twelve identical ones once as well; summing a dimension is
-# meaningless whichever way the sheet is grouped.
+# What the footer fills in. Not a column sum: a row standing for twelve
+# identical boxes prints one box's figures and has to count as twelve, so
+# these are worked out from the grouping instead. Dimensions total to nothing
+# meaningful and are left blank.
 TOTALLED = {
     "Cartons",
-    "Total Qty",
-    "Total N.W. (kg)",
-    "Total G.W. (kg)",
-    "Total CBM",
+    "Qty / Box",
+    "NNW (kg)",
+    "N.W. (kg)",
+    "G.W. (kg)",
+    "CBM",
 }
+
+CM_PER_INCH = Decimal("2.54")
+CM_PLACES = Decimal("0.1")
+CUBIC_CM_PER_CBM = Decimal("1000000")
+CBM_PLACES = Decimal("0.0001")
+
+
+def cm(inches) -> Decimal | None:
+    """Inches as the sheet prints them — a tenth of a centimetre."""
+    if inches is None:
+        return None
+    return (Decimal(inches) * CM_PER_INCH).quantize(
+        CM_PLACES, rounding=ROUND_HALF_UP
+    )
+
+
+def cbm_from_cm(length_in, width_in, height_in) -> Decimal | None:
+    """
+    Worked from the centimetres actually printed rather than from the inches
+    behind them, so a broker who multiplies the three numbers on the page
+    arrives at the fourth. The rounding costs about two parts in ten thousand.
+    """
+    sides = [cm(value) for value in (length_in, width_in, height_in)]
+    if any(side is None for side in sides):
+        return None
+    length, width, height = sides
+    return (length * width * height / CUBIC_CM_PER_CBM).quantize(CBM_PLACES)
 
 @dataclass(frozen=True)
 class Layout:
@@ -55,8 +86,9 @@ class Layout:
     Which columns a sheet prints, and which of them carry a total.
 
     `Group.rows()` always builds the full canonical row above; a layout that
-    prints something else — Display prepends the store and drops the carton
-    count — reorders that row itself, so the grouping never has to know.
+    prints something else — Display drops the carton count, because its rows
+    are already blocked under the store they ship to — takes the columns it
+    wants, so the grouping never has to know.
     """
 
     columns: list
@@ -82,7 +114,7 @@ class Group:
     contents: list
     cartons: list = field(default_factory=list)
 
-    def rows(self, color_for) -> list[list]:
+    def rows(self) -> list[list]:
         count = len(self.cartons)
         sample = self.cartons[0]
 
@@ -91,27 +123,29 @@ class Group:
 
         built = []
         for position, content in enumerate(self.contents):
-            # A carton holding several different things repeats none of its
-            # own figures, so the totals below cannot count it twice.
+            # Only the first row of a box carries the box's own figures. A
+            # carton holding six different things would otherwise state its
+            # weight six times, and read as six boxes.
             opens = position == 0
             built.append(
                 [
                     carton_range(self.cartons) if opens else "",
                     count if opens else None,
                     content.product.style_no,
-                    color_for(content, sample),
                     describe(content),
                     content.quantity,
-                    content.quantity * count,
-                    content.net_weight_kg,
-                    times(content.net_weight_kg, count),
+                    unit_label(content),
+                    nnw(content),
+                    sample.net_weight_kg if opens else None,
                     sample.gross_weight_kg if opens else None,
-                    times(sample.gross_weight_kg, count) if opens else None,
-                    sample.length_in if opens else None,
-                    sample.width_in if opens else None,
-                    sample.height_in if opens else None,
-                    sample.cbm if opens else None,
-                    times(sample.cbm, count) if opens else None,
+                    cm(sample.length_in) if opens else None,
+                    cm(sample.width_in) if opens else None,
+                    cm(sample.height_in) if opens else None,
+                    cbm_from_cm(
+                        sample.length_in, sample.width_in, sample.height_in
+                    )
+                    if opens
+                    else None,
                 ]
             )
         return built
@@ -201,12 +235,99 @@ def times(value: Decimal | None, count: int) -> Decimal | None:
     return None if value is None else value * count
 
 
+def unit_label(content) -> str:
+    """`pcs` on the record, `PCS` on a customs document."""
+    return (content.unit or "").upper()
+
+
+WEIGHT_PLACES = Decimal("0.001")
+
+
+def nnw(content) -> Decimal | None:
+    """
+    The goods alone — unit weight times how many are in the box, with no
+    packing material and no carton.
+
+    `content.net_weight_kg` cannot stand in for this: Hardgoods folds the
+    padding into it and Display does not, so the column would mean two
+    different things on two documents the same desk reads.
+    """
+    piece = content.part if content.part_id else content.product
+    weight = getattr(piece, "product_weight_kg", None)
+    if weight is None:
+        return None
+    return (Decimal(weight) * (content.quantity or 0)).quantize(WEIGHT_PLACES)
+
+
+@dataclass
+class Totals:
+    """
+    What the shipment comes to, gathered as the rows are written.
+
+    It cannot be a column sum. Every printed figure is one box's, and a row
+    may stand for twelve of them, so each group is counted by its run.
+    """
+
+    cartons: int = 0
+    quantity: int = 0
+    nnw_kg: Decimal = Decimal("0")
+    net_kg: Decimal = Decimal("0")
+    gross_kg: Decimal = Decimal("0")
+    cbm: Decimal = Decimal("0")
+
+    def add(self, group: "Group") -> None:
+        count = len(group.cartons)
+        sample = group.cartons[0]
+        self.cartons += count
+
+        for content in group.contents:
+            self.quantity += (content.quantity or 0) * count
+            self.nnw_kg += (nnw(content) or Decimal("0")) * count
+
+        self.net_kg += (sample.net_weight_kg or Decimal("0")) * count
+        self.gross_kg += (sample.gross_weight_kg or Decimal("0")) * count
+        volume = cbm_from_cm(sample.length_in, sample.width_in, sample.height_in)
+        self.cbm += (volume or Decimal("0")) * count
+
+    def merge(self, other: "Totals") -> None:
+        self.cartons += other.cartons
+        self.quantity += other.quantity
+        self.nnw_kg += other.nnw_kg
+        self.net_kg += other.net_kg
+        self.gross_kg += other.gross_kg
+        self.cbm += other.cbm
+
+    def by_column(self) -> dict:
+        return {
+            "Cartons": self.cartons,
+            "Qty / Box": self.quantity,
+            "NNW (kg)": self.nnw_kg,
+            "N.W. (kg)": self.net_kg,
+            "G.W. (kg)": self.gross_kg,
+            "CBM": self.cbm,
+        }
+
+
 def describe(content) -> str:
+    """
+    The customs wording where there is any, and the nearest thing to it where
+    there is not. A blank cell here is a document a broker cannot clear, and
+    a Display product often carries only a style name.
+    """
     if content.description:
         return content.description
     if content.part_id:
-        return f"{content.product.description} — {content.part.name}"
-    return content.product.description
+        part = content.part
+        return part.customs_description or f"{_names(content.product)} — {part.name}"
+    return _names(content.product)
+
+
+def _names(product) -> str:
+    return (
+        product.customs_description
+        or getattr(product, "style_name", "")
+        or product.description
+    )
 
 
 def empty_carton_row(carton) -> list:
@@ -214,19 +335,16 @@ def empty_carton_row(carton) -> list:
         carton_range([carton]),
         1,
         "",
-        "",
         "(empty carton)",
         None,
+        "",
         None,
-        None,
-        None,
+        carton.net_weight_kg,
         carton.gross_weight_kg,
-        carton.gross_weight_kg,
-        carton.length_in,
-        carton.width_in,
-        carton.height_in,
-        carton.cbm,
-        carton.cbm,
+        cm(carton.length_in),
+        cm(carton.width_in),
+        cm(carton.height_in),
+        cbm_from_cm(carton.length_in, carton.width_in, carton.height_in),
     ]
 
 
@@ -286,32 +404,27 @@ def write_banner(sheet, row: int, text: str, layout: Layout = None) -> None:
 def write_totals(
     sheet,
     row: int,
-    ranges: list[tuple[int, int]],
+    totals: Totals,
     label: str,
     layout: Layout = None,
 ) -> None:
     """
-    Summed with formulas rather than values, so the sheet stays true if
-    somebody edits a quantity after it leaves here.
-
-    `ranges` is the data rows to add up, given explicitly rather than as one
-    span: a sheet blocked by store has subtotal rows in between, and a single
-    span across them would add every carton twice.
+    Values, not `=SUM()` formulas. The columns above hold one box's figures
+    and a row may stand for twelve, so nothing on the page adds up to what
+    ships — `Totals` counts the boxes and these are what it reached.
     """
     layout = layout or BASE
-    spans = [(a, b) for a, b in ranges if b >= a]
-    if not spans:
+    if totals.cartons == 0:
         return
 
     heading = sheet.cell(row=row, column=1, value=label)
     heading.font = Font(bold=True)
 
+    figures = totals.by_column()
     for index, (label_text, _, number_format) in enumerate(layout.columns, start=1):
         if label_text not in layout.totalled:
             continue
-        column = get_column_letter(index)
-        parts = ",".join(f"{column}{a}:{column}{b}" for a, b in spans)
-        cell = sheet.cell(row=row, column=index, value=f"=SUM({parts})")
+        cell = sheet.cell(row=row, column=index, value=figures.get(label_text))
         cell.font = Font(bold=True)
         cell.border = Border(top=Side(style="double", color="9AA2B1"))
         cell.number_format = number_format or "0"

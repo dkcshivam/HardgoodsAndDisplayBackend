@@ -607,37 +607,39 @@ class DisplayPackingListTests(APITestCase):
         self.assertIn("STORE 118", flat)
         self.assertIn("Portland", flat)
         self.assertIn("STORE 204", flat)
-        self.assertIn("118 subtotal · 1 carton", flat)
-        self.assertIn("204 subtotal · 1 carton", flat)
-        self.assertIn("ORDER TOTAL · 2 cartons", flat)
+        self.assertIn("118 subtotal · all 1 box", flat)
+        self.assertIn("204 subtotal · all 1 box", flat)
+        self.assertIn("ORDER TOTAL · all 2 boxes", flat)
 
-    def test_the_order_total_skips_the_store_subtotals(self):
+    def test_the_order_total_counts_every_box_once(self):
         """
-        A single span across the blocks would add every carton twice, once as
-        itself and once inside its store's subtotal.
+        The subtotals sit between the blocks, so an order total that swept the
+        whole sheet would count each carton twice — once as itself and once
+        inside its store's subtotal.
         """
         services.apply_step(self.order, self.tpl, self.portland, count=1)
         services.apply_step(self.order, self.tpl, self.austin, count=1)
 
         rows = self.rows()
-        header = next(row for row in rows if "Total Qty" in row)
-        totalled = header.index("Total Qty")
-        total = next(
-            row[totalled]
-            for row in rows
-            if row[0] and str(row[0]).startswith("ORDER TOTAL")
-        )
-        # Two blocks of one row each, named separately — never B9:B24.
-        self.assertRegex(total, r"^=SUM\([A-Z]\d+:[A-Z]\d+,[A-Z]\d+:[A-Z]\d+\)$")
+        header = next(row for row in rows if "Style No" in row)
+        qty = header.index("Qty / Box")
 
-        subtotal_rows = [
-            row[0] for row in rows if row[0] and "subtotal" in str(row[0])
-        ]
-        cited = total[len("=SUM(") : -1].split(",")
-        self.assertEqual(len(cited), len(subtotal_rows))
+        def figure(prefix):
+            return [
+                row[qty]
+                for row in rows
+                if row[0] and prefix(str(row[0]))
+            ]
 
-    def test_every_row_names_its_store_and_no_column_counts_cartons(self):
-        """A row read out of its block still has to say where it ships."""
+        subtotals = figure(lambda label: "subtotal" in label)
+        total = figure(lambda label: label.startswith("ORDER TOTAL"))
+
+        self.assertEqual(len(subtotals), 2)
+        self.assertEqual(total, [sum(subtotals)])
+        self.assertEqual(total, [60])
+
+    def test_neither_the_store_nor_the_carton_count_gets_a_column(self):
+        """The banner above the block already says which store it ships to."""
         # Two cartons for one store, so the range notation is exercised too.
         self.order.lines.filter(store=self.portland).update(quantity=60)
         services.apply_step(self.order, self.tpl, self.portland, count=2)
@@ -646,12 +648,13 @@ class DisplayPackingListTests(APITestCase):
         rows = self.rows()
         header = next(row for row in rows if "Style No" in row)
 
-        self.assertEqual(header[0], "Store")
+        self.assertEqual(header[0], "Carton Nos")
+        self.assertNotIn("Store", header)
         self.assertNotIn("Cartons", header)
 
-        packed = [row for row in rows if row[1] and str(row[1]).startswith("BOX-")]
-        self.assertEqual([row[0] for row in packed], ["118", "204"])
-        self.assertEqual(packed[0][1], "BOX-001 – BOX-002")
+        packed = [row for row in rows if row[0] and str(row[0]).startswith("BOX-")]
+        self.assertEqual(packed[0][0], "BOX-001 – BOX-002")
+        self.assertEqual(len(packed), 2)
 
     def test_a_store_with_no_cartons_is_left_out(self):
         services.apply_step(self.order, self.tpl, self.portland, count=1)

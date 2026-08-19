@@ -21,19 +21,16 @@ from apps.common import packing_sheet as sheet_kit
 from .models import DisplayOrder
 
 
-# The carton count goes: "BOX-001 – BOX-012" already says twelve, and the
-# store arrives instead. A row lifted out of its block — sorted, filtered,
-# pasted into a mail — still has to say where it is going, which the banner
-# above it cannot do.
+# The carton count goes: "BOX-001 – BOX-012" already says twelve. The store
+# is not a column either — every row already sits under the banner naming the
+# store it ships to, and repeating it on all 563 rows only makes the sheet
+# wider than a page.
 _DROPPED = "Cartons"
-_KEPT = [
-    index
-    for index, (label, _, _) in enumerate(sheet_kit.COLUMNS)
-    if label != _DROPPED
-]
 
 LAYOUT = sheet_kit.Layout(
-    columns=[("Store", 12, None)] + [sheet_kit.COLUMNS[index] for index in _KEPT],
+    columns=[
+        column for column in sheet_kit.COLUMNS if column[0] != _DROPPED
+    ],
     totalled=sheet_kit.TOTALLED - {_DROPPED},
 )
 
@@ -42,9 +39,16 @@ def packing_list_filename(order: DisplayOrder) -> str:
     return f"packing-list-{order.number}.xlsx"
 
 
-def _for_store(values: list, store_name: str) -> list:
-    """A canonical row from the shared kit, in this sheet's column order."""
-    return [store_name] + [values[index] for index in _KEPT]
+_KEPT = [
+    index
+    for index, (label, _, _) in enumerate(sheet_kit.COLUMNS)
+    if label != _DROPPED
+]
+
+
+def _for_sheet(values: list) -> list:
+    """A canonical row from the shared kit, minus the columns we do not print."""
+    return [values[index] for index in _KEPT]
 
 
 def build_packing_list(order: DisplayOrder) -> BytesIO:
@@ -60,14 +64,7 @@ def build_packing_list(order: DisplayOrder) -> BytesIO:
 
     row = header_row + 1
     first_data_row = row
-    # Where each store's rows sit, so the grand total can skip the subtotals
-    # sitting between them instead of counting every carton twice.
-    spans: list[tuple[int, int]] = []
-
-    # Colour belongs to the line, so it is per store as well as per product.
-    colors = {
-        (line.store_id, line.product_id): line.color for line in order.lines.all()
-    }
+    order_totals = sheet_kit.Totals()
 
     cartons = list(
         order.cartons.select_related("store").prefetch_related(
@@ -85,34 +82,29 @@ def build_packing_list(order: DisplayOrder) -> BytesIO:
 
         sheet_kit.write_banner(sheet, row, _store_label(store), LAYOUT)
         row += 1
-        block_start = row
 
+        store_totals = sheet_kit.Totals()
         for group in sheet_kit.group_cartons(block):
-            for values in group.rows(
-                lambda content, carton: colors.get(
-                    (carton.store_id, content.product_id), ""
-                )
-            ):
-                sheet_kit.write_row(sheet, row, _for_store(values, store.name), LAYOUT)
+            store_totals.add(group)
+            for values in group.rows():
+                sheet_kit.write_row(sheet, row, _for_sheet(values), LAYOUT)
                 row += 1
 
-        spans.append((block_start, row - 1))
         sheet_kit.write_totals(
             sheet,
             row,
-            [(block_start, row - 1)],
-            f"{store.name} subtotal · {len(block)} carton"
-            f"{'s' if len(block) != 1 else ''}",
+            store_totals,
+            f"{store.name} subtotal · all {_boxes(store_totals.cartons)}",
             LAYOUT,
         )
+        order_totals.merge(store_totals)
         row += 2
 
-    count = len(cartons)
     sheet_kit.write_totals(
         sheet,
         row,
-        spans,
-        f"ORDER TOTAL · {count} carton{'s' if count != 1 else ''}",
+        order_totals,
+        f"ORDER TOTAL · all {_boxes(order_totals.cartons)}",
         LAYOUT,
     )
     sheet.freeze_panes = sheet.cell(row=first_data_row, column=1)
@@ -121,6 +113,10 @@ def build_packing_list(order: DisplayOrder) -> BytesIO:
     workbook.save(stream)
     stream.seek(0)
     return stream
+
+
+def _boxes(count: int) -> str:
+    return f"{count} box{'es' if count != 1 else ''}"
 
 
 def _stores_in_order(order: DisplayOrder, by_store: dict) -> list:

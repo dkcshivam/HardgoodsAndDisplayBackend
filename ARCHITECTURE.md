@@ -203,9 +203,10 @@ The first photo an owner receives becomes its main one until another is chosen.
 `(order, product)`
 
 `color` lives here, not on Product: the same style ships in whatever finish the
-merchant asked for this time, and the packing list prints it. One colour per
-product per order — two finishes of one style in a single order would need
-colour on `CartonContent` too, and is not supported.
+merchant asked for this time. The packing list no longer prints it — the
+document follows the one the shipping desk sends by hand, which has no colour
+column. One colour per product per order — two finishes of one style in a
+single order would need colour on `CartonContent` too, and is not supported.
 
 **Carton** — `order`→ · `carton_no` · `{length,width,height}_in` ·
 `gross_weight_kg` · `sort_order` — unique on `(order, carton_no)`
@@ -434,10 +435,14 @@ heading block naming the order, merchant, buyer and ship-to address, then one ro
 per **distinct thing packed** —
 
 ```
-Carton Nos · Cartons · Style No · Color · Description ·
-Qty/Ctn · Total Qty · N.W./Ctn · Total N.W. · G.W./Ctn · Total G.W. ·
-L · W · H · CBM/Ctn · Total CBM
+Carton Nos · Cartons · Style No · Customs Description ·
+Qty/Box · Units · NNW (kg) · N.W. (kg) · G.W. (kg) ·
+L (cm) · W (cm) · H (cm) · CBM
 ```
+
+The wording and the order follow the packing list the shipping desk already
+sends out by hand, so one desk reads both without learning two conventions.
+Display prints the same columns minus `Cartons`.
 
 Twelve identical cartons of one chair are one row, not twelve. The sheet is as
 long as the order has different items rather than as long as it has boxes, which
@@ -454,12 +459,28 @@ each run when a hand-edited plan leaves gaps: `BOX-001 – BOX-003, BOX-007`.
 Every number a row covers is either printed or inside a printed run — nothing
 is abbreviated into a rule the reader has to decode. Auto-pack numbers each
 part's cartons together precisely so this stays a plain range.
-Per-carton and total columns sit side by
-side; only the totals are summed, since summing a per-carton figure would count
-one box the same as twelve. Dimensions are deliberately not totalled. Totals are
-written as `SUM()` formulas so the sheet stays true if someone edits a row.
+**Every figure on a row describes one box**, however many boxes the row stands
+for. `Qty/Box` is what a single carton holds, not the run's total, and the three
+weights are that carton's.
 
-Colour comes from the order line for that product.
+The three weights are distinct on purpose: `NNW` is the goods alone — unit
+weight times how many are in the box; `N.W.` adds the packing material; `G.W.`
+adds the carton. `NNW` is worked out from the piece rather than read off
+`CartonContent.net_weight_kg`, which folds the padding in on Hardgoods and not
+on Display.
+
+Dimensions print in **centimetres to a tenth**, converted from the inches the
+app stores, and `CBM` is worked from those printed centimetres rather than from
+the inches behind them — so a broker who multiplies the three numbers on the
+page arrives at the fourth. The rounding costs about two parts in ten thousand.
+
+The footer is **not** a column sum. A row standing for twelve identical boxes
+prints one box's figures, so the totals multiply each row by its run: they are
+computed values, not `SUM()` formulas. Dimensions are deliberately not totalled.
+
+`Customs Description` takes the content's own wording, then the piece's
+`customs_description`, then its style name — a blank here is a document a
+broker cannot clear.
 
 Available as soon as cartons exist — a draft list is what the floor works from
 while the order is packed — and built from what is **stored**, so the screen
@@ -1070,7 +1091,7 @@ Vertical slices — database, API and screen for one feature at a time.
 - [x] **6** Photo upload — product and part galleries, file picker or in-app camera
 - [x] **7** Orders — list and create
 - [x] **8** Packing workspace
-- [x] **9** Packing list document — Excel, per order, colour from the order line
+- [x] **9** Packing list document — Excel, per order, one row per thing packed
 - [ ] **10** Authentication
 
 Display (§10), each slice usable before the next starts:
