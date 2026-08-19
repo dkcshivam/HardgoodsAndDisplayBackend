@@ -9,6 +9,7 @@ from .models import (
     DisplayCartonContent,
     DisplayOrder,
     DisplayOrderLine,
+    DisplayOrderRate,
     DisplayProduct,
     DisplayProductImage,
     DisplayProductPart,
@@ -392,10 +393,19 @@ class DisplayOrderLineSerializer(serializers.ModelSerializer):
         ]
 
 
+class DisplayOrderRateSerializer(serializers.ModelSerializer):
+    product_style_no = serializers.CharField(source="product.style_no", read_only=True)
+
+    class Meta:
+        model = DisplayOrderRate
+        fields = ["id", "product", "product_style_no", "rate_usd"]
+
+
 class DisplayOrderSerializer(serializers.ModelSerializer):
     shipping_address = serializers.SerializerMethodField()
     merchant_name = serializers.CharField(source="merchant.name", read_only=True)
     lines = DisplayOrderLineSerializer(many=True, required=False)
+    rates = DisplayOrderRateSerializer(many=True, required=False)
     carton_count = serializers.IntegerField(read_only=True)
 
     class Meta:
@@ -410,6 +420,7 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
             "shipping_address",
             "status",
             "lines",
+            "rates",
             "carton_count",
             "created_at",
         ]
@@ -460,13 +471,16 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         lines = validated_data.pop("lines", [])
+        rates = validated_data.pop("rates", [])
         order = DisplayOrder.objects.create(**validated_data)
         self._write_lines(order, lines)
+        self._sync_rates(order, rates)
         return order
 
     @transaction.atomic
     def update(self, instance, validated_data):
         lines = validated_data.pop("lines", None)
+        rates = validated_data.pop("rates", None)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -475,8 +489,23 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
         if lines is not None:
             # The form always sends the complete list.
             self._sync_lines(instance, lines)
+        if rates is not None:
+            self._sync_rates(instance, rates)
 
         return instance
+
+    @staticmethod
+    def _sync_rates(order, rates_data):
+        """Rewritten wholesale — a rate carries no history of its own."""
+        order.rates.exclude(
+            product__in=[row["product"] for row in rates_data]
+        ).delete()
+        for row in rates_data:
+            DisplayOrderRate.objects.update_or_create(
+                order=order,
+                product=row["product"],
+                defaults={"rate_usd": row["rate_usd"]},
+            )
 
     @staticmethod
     def _write_lines(order, lines):

@@ -30,6 +30,7 @@ class OrderLineSerializer(serializers.ModelSerializer):
             "product_description",
             "color",
             "quantity",
+            "rate_usd",
         ]
 
 

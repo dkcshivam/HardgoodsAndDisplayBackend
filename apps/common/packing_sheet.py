@@ -104,6 +104,10 @@ GROUP_FILL = PatternFill("solid", fgColor="F5F6FA")
 RULE = Side(style="thin", color="D8DCE6")
 BORDER = Border(left=RULE, right=RULE, top=RULE, bottom=RULE)
 
+# A box's rows read as one thing, so the rule that opens a box is heavier
+# than the ones between its own styles.
+EDGE = Side(style="medium", color="8B93A3")
+
 #: What a sheet prints unless it says otherwise — Hardgoods uses this as is.
 BASE = Layout(COLUMNS, TOTALLED)
 
@@ -383,13 +387,19 @@ def write_column_headers(sheet, row: int, layout: Layout = None) -> None:
         )
 
 
-def write_row(sheet, row: int, values: list, layout: Layout = None) -> None:
+def write_row(
+    sheet, row: int, values: list, layout: Layout = None, opens: bool = False
+) -> None:
+    """`opens` draws the heavier rule that separates one box from the last."""
     layout = layout or BASE
+    border = (
+        Border(left=RULE, right=RULE, top=EDGE, bottom=RULE) if opens else BORDER
+    )
     for index, (value, (_, _, number_format)) in enumerate(
         zip(values, layout.columns), start=1
     ):
         cell = sheet.cell(row=row, column=index, value=value)
-        cell.border = BORDER
+        cell.border = border
         if number_format:
             cell.number_format = number_format
             cell.alignment = Alignment(horizontal="right")

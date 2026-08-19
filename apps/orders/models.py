@@ -101,6 +101,16 @@ class OrderLine(models.Model):
         "catalog.Product", on_delete=models.PROTECT, related_name="order_lines"
     )
     quantity = models.PositiveIntegerField()
+    # Priced per order, not per product: a style rarely holds one rate across
+    # seasons, and editing the catalogue must not rewrite a past invoice.
+    rate_usd = models.DecimalField(
+        "rate (US$)",
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Unit price on this order, in US dollars. The invoice multiplies it by what ships.",
+    )
 
     # Lives here rather than on Product because the same SKU ships in
     # whatever finish the merchant asked for this time. The packing list

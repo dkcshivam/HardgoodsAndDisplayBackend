@@ -199,7 +199,8 @@ The first photo an owner receives becomes its main one until another is chosen.
 **Order** — `number`(unique, generated) · `name` · `merchant`→ · `buyer_name` ·
 `ship_{country,line1,line2,city,state,postal_code}` · `status`
 
-**OrderLine** — `order`→ · `product`→ · `color` · `quantity` — unique on
+**OrderLine** — `order`→ · `product`→ · `color` · `quantity` · `rate_usd` —
+unique on
 `(order, product)`
 
 `color` lives here, not on Product: the same style ships in whatever finish the
@@ -487,6 +488,34 @@ broker cannot clear.
 Available as soon as cartons exist — a draft list is what the floor works from
 while the order is packed — and built from what is **stored**, so the screen
 disables the button while there are unsaved edits.
+
+### Invoice
+
+`GET /orders/{id}/invoice/` and `GET /display-orders/{id}/invoice/` render the
+commercial invoice — **one row per style across the whole shipment**, where the
+packing list is one row per distinct thing packed.
+
+```
+Serial No · Style No · HTS Code · Customs Description with Contents ·
+Qty in Pcs · N.Wt. in Kgs. · Rate in US$ · Amount in US$
+```
+
+Billed on what is **packed**, counted the way `reconcile` counts it: a
+multi-part style is a unit only once every piece of it has a box. The invoice
+and the packing list therefore carry the same quantity, which is the pair a
+broker checks first — and it is why this needs cartons before it will build.
+
+Price is **per style, per order**: `OrderLine.rate_usd` on Hardgoods, where a
+line is already one row per product, and `DisplayOrderRate` on Display, where a
+line is per store and seventeen stores wanting one wreath is one price. Neither
+lives on the product: editing the catalogue would rewrite invoices already
+sent. An unpriced style prints its quantity and weight with the two money
+columns blank, and the total is omitted rather than understated.
+
+The heading block is **drawn and labelled but left empty** — invoice number,
+ports, vessel, container, LC and shipping mark change per shipment and the app
+holds none of them. Our own letterhead, the consignee and India as the country
+of origin do print.
 
 ### Status ladder
 
@@ -893,6 +922,9 @@ it. Scope and reusability are two questions, and they need two fields.
 `buyer_name` · `ship_{country,line1,line2,city,state,postal_code}` · `status`
 
 Same status ladder as Hardgoods. `Order.generate_number` already takes a prefix.
+
+**DisplayOrderRate** — `order`→ · `product`→ · `rate_usd` — unique on
+`(order, product)`. What one style sells for on this order; see the Invoice.
 
 **DisplayOrderLine** — `order`→ · `product`→ · `color` · `quantity` — unique on
 `(order, product)`

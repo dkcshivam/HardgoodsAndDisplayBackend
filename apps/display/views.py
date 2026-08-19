@@ -6,7 +6,12 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from . import services
-from .exports import build_packing_list, packing_list_filename
+from .exports import (
+    build_invoice,
+    build_packing_list,
+    invoice_filename,
+    packing_list_filename,
+)
 from .models import (
     NEXT_STATUS,
     DisplayOrder,
@@ -361,6 +366,30 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
                     many=True,
                 ).data,
             }
+        )
+
+    @action(detail=True, methods=["get"], url_path="invoice")
+    def invoice(self, request, pk=None):
+        """
+        The commercial invoice. Billed on what is packed, so it needs cartons
+        for the same reason the packing list does — and the two documents then
+        carry the same quantity, which is the pair a broker checks first.
+        """
+        order = self.get_object()
+
+        if not order.cartons.exists():
+            return Response(
+                {"detail": "There is nothing to invoice yet — pack the order first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return FileResponse(
+            build_invoice(order),
+            as_attachment=True,
+            filename=invoice_filename(order),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
         )
 
     @action(detail=True, methods=["post"], url_path="advance-status")

@@ -555,6 +555,41 @@ class PackStep(models.Model):
         return f"{self.order.number} / step {self.sequence}: {self.template.code} × {self.count}"
 
 
+class DisplayOrderRate(models.Model):
+    """
+    What one style sells for on one order.
+
+    Not on the line: a display order lists a style once per store, and 17
+    stores wanting the same wreath is one price, not seventeen. Not on the
+    product either — editing the catalogue would rewrite invoices already
+    sent.
+    """
+
+    order = models.ForeignKey(
+        DisplayOrder, on_delete=models.CASCADE, related_name="rates"
+    )
+    product = models.ForeignKey(
+        DisplayProduct, on_delete=models.PROTECT, related_name="order_rates"
+    )
+    rate_usd = models.DecimalField(
+        "rate (US$)",
+        max_digits=12,
+        decimal_places=2,
+        help_text="Unit price on this order, in US dollars. The invoice multiplies it by what ships.",
+    )
+
+    class Meta:
+        ordering = ["product__style_no"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["order", "product"], name="one_rate_per_product_per_order"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.order.number} · {self.product.style_no} @ {self.rate_usd}"
+
+
 class CartonUnit(models.TextChoices):
     PIECES = "pcs", "pcs"
     SET = "set", "set"
