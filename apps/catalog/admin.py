@@ -48,7 +48,7 @@ class ProductAdmin(admin.ModelAdmin):
         "packing",
         "status",
     )
-    list_filter = ("status", "is_multi_part", "category")
+    list_filter = ("status", "is_multi_part", "is_delegate", "category")
     search_fields = (
         "style_no",
         "style_name",
@@ -81,7 +81,7 @@ class ProductAdmin(admin.ModelAdmin):
         ),
         (
             "How it packs",
-            {"fields": ("is_multi_part", "pack_per_box")},
+            {"fields": ("is_multi_part", "is_delegate", "pack_per_box")},
         ),
         (
             "Single-box: the carton",

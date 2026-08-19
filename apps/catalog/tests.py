@@ -217,3 +217,36 @@ class ProductStyleNameTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["style_name"], "")
+
+
+class ProductDelegateTests(APITestCase):
+    """A flag the desk sets per piece: off by default, and set per part."""
+
+    def test_it_defaults_off_and_round_trips(self):
+        product = Product.objects.create(style_no="DEL-01", description="Thing")
+        response = self.client.get(f"/api/products/{product.id}/")
+        self.assertIs(response.data["is_delegate"], False)
+
+        product.is_delegate = True
+        product.save(update_fields=["is_delegate"])
+        response = self.client.get(f"/api/products/{product.id}/")
+        self.assertIs(response.data["is_delegate"], True)
+
+    def test_each_part_carries_its_own(self):
+        product = Product.objects.create(
+            style_no="DEL-02", description="Table", is_multi_part=True
+        )
+        top = ProductPart.objects.create(product=product, name="Top", is_delegate=True)
+        ProductPart.objects.create(product=product, name="Legs", sort_order=1)
+
+        response = self.client.get(f"/api/products/{product.id}/")
+        flags = {part["name"]: part["is_delegate"] for part in response.data["parts"]}
+
+        self.assertEqual(flags, {"Top": True, "Legs": False})
+        self.assertEqual(top.product.parts.filter(is_delegate=True).count(), 1)
+
+    def test_the_products_list_carries_it(self):
+        Product.objects.create(style_no="DEL-03", description="Thing", is_delegate=True)
+        response = self.client.get("/api/products/")
+        row = next(r for r in response.data["results"] if r["style_no"] == "DEL-03")
+        self.assertIs(row["is_delegate"], True)

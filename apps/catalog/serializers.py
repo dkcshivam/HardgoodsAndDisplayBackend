@@ -80,6 +80,7 @@ class ProductPartSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "is_delegate",
             "description",
             "customs_description",
             "hsn_code",
@@ -121,6 +122,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "category",
             "category_name",
             "is_multi_part",
+            "is_delegate",
             "part_count",
             "pack_per_box",
             "main_image",
@@ -167,6 +169,7 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
             "customs_description",
             "hsn_code",
             "is_multi_part",
+            "is_delegate",
             "is_in_use",
             "status",
             "assembled_length_in",

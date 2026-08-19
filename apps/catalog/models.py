@@ -69,6 +69,10 @@ class Product(PackSpec, TimeStampedModel):
         max_length=10, choices=ProductStatus.choices, default=ProductStatus.ACTIVE
     )
 
+    # Carried on the piece for the desk's own use. Nothing in packing, the
+    # packing list or the invoice reads it yet — say the word and it prints.
+    is_delegate = models.BooleanField(default=False)
+
     # Reference only — the finished, put-together item.
     assembled_length_in = models.DecimalField(
         "assembled length (in)", max_digits=8, decimal_places=2, null=True, blank=True
@@ -148,6 +152,10 @@ class ProductPart(PackSpec):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="parts")
 
     name = models.CharField(max_length=120, help_text="e.g. Table top")
+
+    # Carried on the piece for the desk's own use. Nothing in packing, the
+    # packing list or the invoice reads it yet — say the word and it prints.
+    is_delegate = models.BooleanField(default=False)
     description = models.CharField(max_length=255, blank=True)
 
     customs_description = models.CharField(max_length=255, blank=True)

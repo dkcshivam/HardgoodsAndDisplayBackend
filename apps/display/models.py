@@ -62,6 +62,10 @@ class DisplayProduct(TimeStampedModel):
         default=DisplayProductStatus.ACTIVE,
     )
 
+    # Carried on the piece for the desk's own use. Nothing in packing, the
+    # packing list or the invoice reads it yet — say the word and it prints.
+    is_delegate = models.BooleanField(default=False)
+
     product_weight_kg = models.DecimalField(
         "product weight (kg)",
         max_digits=10,
@@ -121,6 +125,10 @@ class DisplayProductPart(models.Model):
     product = models.ForeignKey(
         DisplayProduct, on_delete=models.CASCADE, related_name="parts"
     )
+
+    # Carried on the piece for the desk's own use. Nothing in packing, the
+    # packing list or the invoice reads it yet — say the word and it prints.
+    is_delegate = models.BooleanField(default=False)
 
     name = models.CharField(max_length=120, help_text="e.g. Wreath frame")
     description = models.CharField(max_length=255, blank=True)

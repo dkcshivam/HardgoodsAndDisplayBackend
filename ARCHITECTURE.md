@@ -181,11 +181,16 @@ order still carries a single ship-to address of its own.
 ### catalog
 
 **Product** — `style_no`(unique) · `style_name` · `description` · `category`→ ·
-`customs_description` · `hsn_code` · `is_multi_part` · `status` ·
+`customs_description` · `hsn_code` · `is_multi_part` · `is_delegate` · `status` ·
 `assembled_{length,width,height}_in` · `assembled_weight_kg` · `pack_per_box` ·
 *plus the PackSpec block*
 
-**ProductPart** — `product`→ · `name` · `description` · `customs_description` ·
+`is_delegate` is set per piece — on the product, and on each part of a
+multi-part one, because the parts of a product need not agree. Nothing in
+packing or either document reads it yet; it is stored and shown, and prints
+the moment somebody says where.
+
+**ProductPart** — `product`→ · `name` · `is_delegate` · `description` · `customs_description` ·
 `hsn_code` · `{length,width,height}_in` · `sort_order` · *plus the PackSpec block*
 
 **ProductImage** — `product`→ *or* `part`→ (exactly one, enforced by CHECK
@@ -807,7 +812,7 @@ Every one of `DisplayOrderLine`, `PackStep` and `DisplayCarton` names a store.
 That is not denormalisation for speed — see §10.4.2.
 
 **DisplayProduct** — `style_no`(unique) · `style_name` · `description` · `category`→ ·
-`customs_description` · `hsn_code` · `is_multi_part` · `status` ·
+`customs_description` · `hsn_code` · `is_multi_part` · `is_delegate` · `status` ·
 `product_weight_kg` · `{length,width,height}_in`
 
 Its own catalogue, not `catalog.Product`. It has **no box of its own** — no

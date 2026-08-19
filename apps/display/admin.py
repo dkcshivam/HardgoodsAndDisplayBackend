@@ -37,7 +37,7 @@ class DisplayProductAdmin(admin.ModelAdmin):
         "product_weight_kg",
         "status",
     )
-    list_filter = ("status", "is_multi_part", "category")
+    list_filter = ("status", "is_multi_part", "is_delegate", "category")
     search_fields = ("style_no", "style_name", "description")
     readonly_fields = ("created_at", "updated_at")
     inlines = [DisplayProductPartInline]
