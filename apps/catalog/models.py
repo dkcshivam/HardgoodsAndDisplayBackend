@@ -31,6 +31,11 @@ class Product(PackSpec, TimeStampedModel):
         unique=True,
         help_text="Unique SKU code, e.g. DKC-TBL-OAK-01",
     )
+    style_name = models.CharField(
+        max_length=180,
+        blank=True,
+        help_text="The buyer's name for the style, e.g. Oak Dining Table.",
+    )
     description = models.CharField(
         max_length=255,
         help_text="Internal or trade name, e.g. Oak Dining Table",

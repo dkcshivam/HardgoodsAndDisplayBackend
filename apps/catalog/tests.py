@@ -168,3 +168,52 @@ class ProductPhotoTests(APITestCase):
         row = response.data["results"][0]
 
         self.assertIn("/media/products/", row["main_image"])
+
+
+class ProductStyleNameTests(APITestCase):
+    """The buyer's name for the style — what a box sticker prints."""
+
+    def setUp(self):
+        # Complete enough to survive a save: a product missing its shipping
+        # essentials is refused whatever the patch was about.
+        self.product = Product.objects.create(
+            style_no="TBL-02",
+            description="Oak Dining Table, made of solid oak",
+            customs_description="Wooden dining table",
+            hsn_code="9403",
+            box_length_in="76.00",
+            box_width_in="44.00",
+            box_height_in="8.00",
+            product_weight_kg="18.000",
+            packing_material_weight_kg="0.600",
+            box_weight_kg="4.000",
+        )
+
+    def test_style_name_round_trips(self):
+        response = self.client.patch(
+            f"/api/products/{self.product.id}/",
+            {"style_name": "Ashcroft Table"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["style_name"], "Ashcroft Table")
+
+    def test_the_products_list_carries_the_style_name(self):
+        self.product.style_name = "Ashcroft Table"
+        self.product.save(update_fields=["style_name"])
+
+        response = self.client.get("/api/products/")
+        row = next(
+            item
+            for item in response.data["results"]
+            if item["id"] == self.product.id
+        )
+
+        self.assertEqual(row["style_name"], "Ashcroft Table")
+
+    def test_style_name_is_optional(self):
+        response = self.client.get(f"/api/products/{self.product.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["style_name"], "")

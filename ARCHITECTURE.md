@@ -180,7 +180,7 @@ order still carries a single ship-to address of its own.
 
 ### catalog
 
-**Product** — `style_no`(unique) · `description` · `category`→ ·
+**Product** — `style_no`(unique) · `style_name` · `description` · `category`→ ·
 `customs_description` · `hsn_code` · `is_multi_part` · `status` ·
 `assembled_{length,width,height}_in` · `assembled_weight_kg` · `pack_per_box` ·
 *plus the PackSpec block*
@@ -754,7 +754,7 @@ replaces rather than merges.
 Every one of `DisplayOrderLine`, `PackStep` and `DisplayCarton` names a store.
 That is not denormalisation for speed — see §10.4.2.
 
-**DisplayProduct** — `style_no`(unique) · `description` · `category`→ ·
+**DisplayProduct** — `style_no`(unique) · `style_name` · `description` · `category`→ ·
 `customs_description` · `hsn_code` · `is_multi_part` · `status` ·
 `product_weight_kg` · `{length,width,height}_in`
 

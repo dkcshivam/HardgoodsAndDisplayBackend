@@ -116,6 +116,7 @@ class ProductListSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "style_no",
+            "style_name",
             "description",
             "category",
             "category_name",
@@ -159,6 +160,7 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
         fields = [
             "id",
             "style_no",
+            "style_name",
             "description",
             "category",
             "category_name",

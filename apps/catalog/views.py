@@ -13,8 +13,14 @@ class ProductViewSet(viewsets.ModelViewSet):
         .all()
     )
     filterset_fields = ["status", "category", "is_multi_part"]
-    search_fields = ["style_no", "description", "customs_description", "hsn_code"]
-    ordering_fields = ["style_no", "description", "created_at"]
+    search_fields = [
+        "style_no",
+        "style_name",
+        "description",
+        "customs_description",
+        "hsn_code",
+    ]
+    ordering_fields = ["style_no", "style_name", "description", "created_at"]
 
     def get_serializer_class(self):
         if self.action == "list":

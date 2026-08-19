@@ -42,13 +42,20 @@ class ProductPartInline(admin.StackedInline):
 class ProductAdmin(admin.ModelAdmin):
     list_display = (
         "style_no",
+        "style_name",
         "description",
         "category",
         "packing",
         "status",
     )
     list_filter = ("status", "is_multi_part", "category")
-    search_fields = ("style_no", "description", "customs_description", "hsn_code")
+    search_fields = (
+        "style_no",
+        "style_name",
+        "description",
+        "customs_description",
+        "hsn_code",
+    )
     inlines = [ProductImageInline, ProductPartInline]
     readonly_fields = ("derived", "created_at", "updated_at")
 
@@ -58,6 +65,7 @@ class ProductAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "style_no",
+                    "style_name",
                     "description",
                     "category",
                     "status",
