@@ -96,8 +96,8 @@ class PackingApiTests(OrderFixture):
                     carton["carton_no"]
                 )
 
-        self.assertEqual(by_part["Table — Top"], ["CTN-004", "CTN-005"])
-        self.assertEqual(by_part["Table — Legs"], ["CTN-006", "CTN-007"])
+        self.assertEqual(by_part["Table — Top"], ["BOX-004", "BOX-005"])
+        self.assertEqual(by_part["Table — Legs"], ["BOX-006", "BOX-007"])
 
     def test_packing_accepts_both_get_and_put(self):
         """Regression: a second @action on the same url_path shadowed the PUT."""
@@ -224,7 +224,7 @@ class PackingListTests(OrderFixture):
         self.client.post(self.url("auto-pack"))
         chairs = self.rows()[0]
 
-        self.assertEqual(chairs[self.RANGE], "CTN-001 – CTN-003")
+        self.assertEqual(chairs[self.RANGE], "BOX-001 – BOX-003")
         self.assertEqual(chairs[self.COUNT], 3)
 
     def test_each_part_gets_one_unbroken_range(self):
@@ -232,20 +232,20 @@ class PackingListTests(OrderFixture):
         self.client.post(self.url("auto-pack"))
         tops, legs = self.rows()[1], self.rows()[2]
 
-        self.assertEqual(tops[self.RANGE], "CTN-004 – CTN-007")
-        self.assertEqual(legs[self.RANGE], "CTN-008 – CTN-011")
+        self.assertEqual(tops[self.RANGE], "BOX-004 – BOX-007")
+        self.assertEqual(legs[self.RANGE], "BOX-008 – BOX-011")
 
     def test_a_hand_edited_plan_with_gaps_names_every_run(self):
         """Nothing is abbreviated away: each number a row covers is either
         printed or inside a printed run."""
         def renumber(cartons):
             # Push the third chair carton clear of the first two.
-            cartons[2]["carton_no"] = "CTN-009"
+            cartons[2]["carton_no"] = "BOX-009"
 
         self.repack(renumber)
         chairs = self.rows()[0]
 
-        self.assertEqual(chairs[self.RANGE], "CTN-001 – CTN-002, CTN-009")
+        self.assertEqual(chairs[self.RANGE], "BOX-001 – BOX-002, BOX-009")
         self.assertEqual(chairs[self.COUNT], 3)
 
     def test_totals_multiply_the_per_carton_figures(self):
@@ -285,9 +285,9 @@ class PackingListTests(OrderFixture):
         rows = self.rows()
 
         self.assertEqual(len(rows), 4)
-        self.assertEqual(rows[0][self.RANGE], "CTN-001")
+        self.assertEqual(rows[0][self.RANGE], "BOX-001")
         self.assertEqual(rows[0][self.COUNT], 1)
-        self.assertEqual(rows[1][self.RANGE], "CTN-002 – CTN-003")
+        self.assertEqual(rows[1][self.RANGE], "BOX-002 – BOX-003")
         self.assertEqual(rows[1][self.COUNT], 2)
 
     def test_the_filename_names_the_order(self):

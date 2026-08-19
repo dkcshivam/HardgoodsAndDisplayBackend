@@ -128,7 +128,7 @@ def build_packing_plan(order: Order) -> list[PlannedCarton]:
 
 
 def _carton_no(sequence: int) -> str:
-    return f"CTN-{sequence:03d}"
+    return f"BOX-{sequence:03d}"
 
 
 @transaction.atomic

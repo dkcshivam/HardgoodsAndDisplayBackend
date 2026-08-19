@@ -182,7 +182,7 @@ class DisplayPackingTests(TestCase):
         services.apply_step(self.order, self.t2, self.store, count=2)
         self.assertEqual(
             list(self.order.cartons.values_list("carton_no", flat=True)),
-            ["CTN-001", "CTN-002", "CTN-003", "CTN-004"],
+            ["BOX-001", "BOX-002", "BOX-003", "BOX-004"],
         )
 
     def test_earlier_carton_numbers_survive_a_later_edit(self):
@@ -197,7 +197,7 @@ class DisplayPackingTests(TestCase):
                     "carton_no", flat=True
                 )
             ),
-            ["CTN-001", "CTN-002"],
+            ["BOX-001", "BOX-002"],
         )
 
     # ── Editing the plan ─────────────────────────────────────────────
@@ -510,7 +510,7 @@ class StorePackingTests(TestCase):
 
         self.assertEqual(
             list(self.order.cartons.values_list("carton_no", flat=True)),
-            ["CTN-001", "CTN-002"],
+            ["BOX-001", "BOX-002"],
         )
 
     def test_the_summary_reports_each_store_separately(self):
@@ -649,9 +649,9 @@ class DisplayPackingListTests(APITestCase):
         self.assertEqual(header[0], "Store")
         self.assertNotIn("Cartons", header)
 
-        packed = [row for row in rows if row[1] and str(row[1]).startswith("CTN-")]
+        packed = [row for row in rows if row[1] and str(row[1]).startswith("BOX-")]
         self.assertEqual([row[0] for row in packed], ["118", "204"])
-        self.assertEqual(packed[0][1], "CTN-001 – CTN-002")
+        self.assertEqual(packed[0][1], "BOX-001 – BOX-002")
 
     def test_a_store_with_no_cartons_is_left_out(self):
         services.apply_step(self.order, self.tpl, self.portland, count=1)
@@ -840,7 +840,7 @@ class PieceCountingTests(TestCase):
         carton = DisplayCarton.objects.create(
             order=self.order,
             store=self.store,
-            carton_no=f"CTN-{self.order.cartons.count() + 1:03d}",
+            carton_no=f"BOX-{self.order.cartons.count() + 1:03d}",
             length_in=Decimal("40"),
             width_in=Decimal("20"),
             height_in=Decimal("6"),

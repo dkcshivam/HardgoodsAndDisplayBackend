@@ -130,7 +130,7 @@ class Carton(models.Model):
     """
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="cartons")
-    carton_no = models.CharField(max_length=32, help_text="e.g. CTN-001")
+    carton_no = models.CharField(max_length=32, help_text="e.g. BOX-001")
 
     length_in = models.DecimalField(
         "length (in)", max_digits=8, decimal_places=2, null=True, blank=True

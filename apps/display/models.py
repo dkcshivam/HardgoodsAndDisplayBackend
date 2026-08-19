@@ -574,7 +574,7 @@ class DisplayCarton(models.Model):
     store = models.ForeignKey(
         "masters.Store", on_delete=models.PROTECT, related_name="display_cartons"
     )
-    carton_no = models.CharField(max_length=32, help_text="e.g. CTN-001")
+    carton_no = models.CharField(max_length=32, help_text="e.g. BOX-001")
 
     # Provenance, not constraint: contents may be edited away from the template,
     # and a null step means somebody built this box by hand.

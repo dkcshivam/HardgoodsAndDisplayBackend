@@ -216,7 +216,7 @@ def _build_cartons(step: PackStep) -> None:
             order=order,
             step=step,
             store_id=step.store_id,
-            carton_no=f"CTN-{start + offset:03d}",
+            carton_no=f"BOX-{start + offset:03d}",
             length_in=template.box_length_in,
             width_in=template.box_width_in,
             height_in=template.box_height_in,

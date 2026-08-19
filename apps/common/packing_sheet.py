@@ -167,8 +167,8 @@ TRAILING_NUMBER = re.compile(r"(\d+)$")
 
 def carton_range(cartons: list) -> str:
     """
-    `CTN-001 – CTN-012` for a run, and each run named when a hand-edited
-    plan leaves gaps: `CTN-001 – CTN-003, CTN-007`.
+    `BOX-001 – BOX-012` for a run, and each run named when a hand-edited
+    plan leaves gaps: `BOX-001 – BOX-003, BOX-007`.
 
     Every number a row covers is either printed or inside a printed run.
     A shorthand for the gaps would be shorter, but a range that has to be

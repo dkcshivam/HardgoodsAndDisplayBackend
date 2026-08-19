@@ -391,10 +391,10 @@ Quantity 1, box and dimensions from that part, gross from that part's weights.
 `ceil(qty / pack_per_box)` cartons, each holding `min(pack_per_box, remaining)`.
 *6 chairs at 2/box = 3 cartons.*
 
-Carton numbers run sequentially `CTN-001`, `CTN-002`, …
+Carton numbers run sequentially `BOX-001`, `BOX-002`, …
 
 Parts are the outer loop so each part's cartons form one unbroken run —
-`CTN-004 – CTN-006` for the tops, `CTN-007 – CTN-009` for the leg sets.
+`BOX-004 – BOX-006` for the tops, `BOX-007 – BOX-009` for the leg sets.
 Numbering one whole unit at a time instead would put a part's boxes on every
 second number, which the packing list could only print as a rule; a carton
 range that has to be decoded is one somebody miscounts at a port. The floor
@@ -449,8 +449,8 @@ three dimensions. Reweigh one box and it breaks out onto its own row, which is
 the point: a merged row asserts those cartons really are interchangeable. A
 carton holding more than one different product never merges.
 
-`Carton Nos` collapses consecutive numbers to `CTN-001 – CTN-003`, and names
-each run when a hand-edited plan leaves gaps: `CTN-001 – CTN-003, CTN-007`.
+`Carton Nos` collapses consecutive numbers to `BOX-001 – BOX-003`, and names
+each run when a hand-edited plan leaves gaps: `BOX-001 – BOX-003, BOX-007`.
 Every number a row covers is either printed or inside a printed run — nothing
 is abbreviated into a rule the reader has to decode. Auto-pack numbers each
 part's cartons together precisely so this stays a plain range.
@@ -923,20 +923,20 @@ box, for the template editor only; no carton reads them.
 
 ### 10.6 Carton numbering
 
-Continuous across the order: `CTN-001`, `CTN-002`, … assigned in step order, so
+Continuous across the order: `BOX-001`, `BOX-002`, … assigned in step order, so
 each step owns one unbroken run. That keeps the packing list's ranges plain
 rather than a rule to decode, for the reason given in §7.
 
 **The store is a label on the carton, not a reset of the sequence.** One
 shipment gets one run of numbers, whichever store each box is bound for. Per
-store numbering would give a shipment fifty `CTN-001`s, and the first
+store numbering would give a shipment fifty `BOX-001`s, and the first
 duplicate is the first miscount.
 
 **Numbers are never reassigned.** Editing step 4 rebuilds the cartons from step 4
 onward, and they continue from the highest number still standing; everything
 before keeps the number already written on the box. Deleting a middle step
 therefore leaves a gap, which is fine — §7 already prints gapped runs by naming
-each one (`CTN-001 – CTN-003, CTN-007`).
+each one (`BOX-001 – BOX-003, BOX-007`).
 
 *Rationale:* an earlier draft renumbered on every edit and froze that at
 `packed`. Not renumbering at all is strictly better — a number on a physical

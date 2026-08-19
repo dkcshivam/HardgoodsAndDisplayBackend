@@ -21,7 +21,7 @@ from apps.common import packing_sheet as sheet_kit
 from .models import DisplayOrder
 
 
-# The carton count goes: "CTN-001 – CTN-012" already says twelve, and the
+# The carton count goes: "BOX-001 – BOX-012" already says twelve, and the
 # store arrives instead. A row lifted out of its block — sorted, filtered,
 # pasted into a mail — still has to say where it is going, which the banner
 # above it cannot do.
