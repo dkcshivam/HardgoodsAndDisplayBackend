@@ -376,6 +376,9 @@ class ShippingAddressSerializer(serializers.Serializer):
 
 class DisplayOrderLineSerializer(serializers.ModelSerializer):
     product_style_no = serializers.CharField(source="product.style_no", read_only=True)
+    product_style_name = serializers.CharField(
+        source="product.style_name", read_only=True
+    )
     product_description = serializers.CharField(
         source="product.description", read_only=True
     )
@@ -389,6 +392,7 @@ class DisplayOrderLineSerializer(serializers.ModelSerializer):
             "store_name",
             "product",
             "product_style_no",
+            "product_style_name",
             "product_description",
             "color",
             "quantity",
