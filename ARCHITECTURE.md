@@ -469,10 +469,12 @@ adds the carton. `NNW` is worked out from the piece rather than read off
 `CartonContent.net_weight_kg`, which folds the padding in on Hardgoods and not
 on Display.
 
-Dimensions print in **centimetres to a tenth**, converted from the inches the
-app stores, and `CBM` is worked from those printed centimetres rather than from
-the inches behind them — so a broker who multiplies the three numbers on the
-page arrives at the fourth. The rounding costs about two parts in ten thousand.
+Dimensions print in **centimetres to two places**, converted from the inches
+the app stores, and `CBM` is worked from those printed centimetres rather than
+from the inches behind them — so a broker who multiplies the three numbers on
+the page arrives at the fourth. Two places rather than one because an inch is
+exactly 2.54 cm: a whole-inch box converts with no rounding at all, and the
+sheet's CBM then equals the one the app computed in inches.
 
 The footer is **not** a column sum. A row standing for twelve identical boxes
 prints one box's figures, so the totals multiply each row by its run: they are

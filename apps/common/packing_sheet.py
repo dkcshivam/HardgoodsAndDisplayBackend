@@ -34,9 +34,9 @@ COLUMNS = [
     ("NNW (kg)", 11, "0.000"),
     ("N.W. (kg)", 11, "0.000"),
     ("G.W. (kg)", 11, "0.000"),
-    ("L (cm)", 9, "0.0"),
-    ("W (cm)", 9, "0.0"),
-    ("H (cm)", 9, "0.0"),
+    ("L (cm)", 9, "0.00"),
+    ("W (cm)", 9, "0.00"),
+    ("H (cm)", 9, "0.00"),
     ("CBM", 10, "0.0000"),
 ]
 
@@ -54,13 +54,17 @@ TOTALLED = {
 }
 
 CM_PER_INCH = Decimal("2.54")
-CM_PLACES = Decimal("0.1")
+CM_PLACES = Decimal("0.01")
 CUBIC_CM_PER_CBM = Decimal("1000000")
 CBM_PLACES = Decimal("0.0001")
 
 
 def cm(inches) -> Decimal | None:
-    """Inches as the sheet prints them — a tenth of a centimetre."""
+    """
+    Inches as the sheet prints them. Two places, because an inch is exactly
+    2.54 cm — a whole-inch box converts without any rounding at all, and the
+    CBM below then matches the one the app worked out in inches.
+    """
     if inches is None:
         return None
     return (Decimal(inches) * CM_PER_INCH).quantize(
@@ -72,7 +76,7 @@ def cbm_from_cm(length_in, width_in, height_in) -> Decimal | None:
     """
     Worked from the centimetres actually printed rather than from the inches
     behind them, so a broker who multiplies the three numbers on the page
-    arrives at the fourth. The rounding costs about two parts in ten thousand.
+    arrives at the fourth.
     """
     sides = [cm(value) for value in (length_in, width_in, height_in)]
     if any(side is None for side in sides):
