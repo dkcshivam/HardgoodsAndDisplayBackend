@@ -1,14 +1,19 @@
 FROM python:3.13-slim AS base
 
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /bin/uv
+
+# UV_PROJECT_ENVIRONMENT points at the image interpreter because the compose
+# bind mount over /app would otherwise hide a .venv installed there.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    UV_PROJECT_ENVIRONMENT=/usr/local \
+    UV_LINK_MODE=copy \
+    UV_NO_CACHE=1
 
 WORKDIR /app
 
-COPY requirements.txt ./
-RUN pip install -r requirements.txt
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev
 
 COPY . .
 

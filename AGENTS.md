@@ -19,6 +19,7 @@ docker compose exec backend python manage.py seed_display   # display sample dat
 docker compose exec backend python manage.py test   # must pass
 docker compose exec backend python manage.py makemigrations
 docker compose exec backend python manage.py createsuperuser
+uv add <package>                                    # deps live in pyproject.toml + uv.lock
 ```
 
 API http://localhost:8000/api · Admin http://localhost:8000/admin
