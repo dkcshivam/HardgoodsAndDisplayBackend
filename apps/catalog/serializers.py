@@ -55,11 +55,9 @@ def _unanswered(instance, attrs, field) -> bool:
     return value is None or value == ""
 
 
-#: A carton cannot be built, weighed or cleared through customs without
-#: these, so nothing that owns a box is allowed to leave them empty.
+#: A carton cannot be built or weighed without these, so nothing that owns a
+#: box may leave them empty. The customs fields are optional.
 BOXED_PIECE_REQUIRED = [
-    "customs_description",
-    "hsn_code",
     "box_length_in",
     "box_width_in",
     "box_height_in",
@@ -84,6 +82,7 @@ class ProductPartSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
             "description",
             "customs_description",
             "hsn_code",
+            "hts_code",
             "length_in",
             "width_in",
             "height_in",
@@ -95,12 +94,9 @@ class ProductPartSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
         # for all of it — the product above has none of these to fall back on.
         extra_kwargs = {
             "name": {"required": True, "allow_blank": False},
-            "customs_description": {"required": True, "allow_blank": False},
-            "hsn_code": {"required": True, "allow_blank": False},
             **{
                 field: {"required": True, "allow_null": False}
                 for field in BOXED_PIECE_REQUIRED
-                if not field.endswith(("description", "code"))
             },
         }
 
@@ -168,6 +164,7 @@ class ProductSerializer(DerivedFieldsMixin, serializers.ModelSerializer):
             "category_name",
             "customs_description",
             "hsn_code",
+            "hts_code",
             "is_multi_part",
             "is_delegate",
             "is_in_use",

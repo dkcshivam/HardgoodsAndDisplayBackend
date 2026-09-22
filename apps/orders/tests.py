@@ -363,3 +363,21 @@ class PackingListTests(OrderFixture):
         self.assertIn(
             f"packing-list-{self.order.number}.xlsx", response["Content-Disposition"]
         )
+
+
+class InvoiceCodeTests(OrderFixture):
+    """The buyer's customs clear on the US tariff code, not India's HSN."""
+
+    def test_the_invoice_prints_the_hts_code_not_the_hsn(self):
+        Product.objects.filter(pk=self.chair.pk).update(
+            hsn_code="9401", hts_code="9401.61.6011"
+        )
+        # A multi-part product has no code of its own; its parts carry it.
+        self.table.parts.update(hsn_code="9403", hts_code="9403.60.8081")
+        self.client.post(self.url("auto-pack"))
+
+        response = self.client.get(self.url("invoice-data"))
+        self.assertEqual(response.status_code, 200)
+
+        codes = {line[1]: line[2] for line in response.data["lines"]}
+        self.assertEqual(codes, {"CHR-01": "9401.61.6011", "TBL-01": "9403.60.8081"})

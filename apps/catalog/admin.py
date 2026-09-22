@@ -17,7 +17,7 @@ class ProductPartInline(admin.StackedInline):
     fields = (
         ("name", "sort_order"),
         "description",
-        ("customs_description", "hsn_code"),
+        ("customs_description", "hsn_code", "hts_code"),
         ("length_in", "width_in", "height_in"),
         "product_weight_kg",
         ("box_length_in", "box_width_in", "box_height_in"),
@@ -55,6 +55,7 @@ class ProductAdmin(admin.ModelAdmin):
         "description",
         "customs_description",
         "hsn_code",
+        "hts_code",
     )
     inlines = [ProductImageInline, ProductPartInline]
     readonly_fields = ("derived", "created_at", "updated_at")
@@ -76,7 +77,7 @@ class ProductAdmin(admin.ModelAdmin):
             "Customs",
             {
                 "description": "For a multi-part product these live on each part instead.",
-                "fields": ("customs_description", "hsn_code"),
+                "fields": ("customs_description", "hsn_code", "hts_code"),
             },
         ),
         (
@@ -141,5 +142,5 @@ class ProductAdmin(admin.ModelAdmin):
 @admin.register(ProductPart)
 class ProductPartAdmin(admin.ModelAdmin):
     list_display = ("product", "name", "net_weight_kg", "gross_weight_kg", "cbm")
-    search_fields = ("name", "product__style_no", "hsn_code")
+    search_fields = ("name", "product__style_no", "hsn_code", "hts_code")
     inlines = [ProductImageInline]

@@ -45,11 +45,9 @@ def _unanswered(instance, attrs, field) -> bool:
 
 
 #: A display product owns no box, so what it must answer for is itself: the
-#: customs lines it clears on, and the size and weight a template checks a
-#: carton's fit against.
+#: size and weight a template checks a carton's fit against. The customs
+#: fields (description, HSN, HTS) are optional — filled when they are known.
 PIECE_REQUIRED = [
-    "customs_description",
-    "hsn_code",
     "product_weight_kg",
     "length_in",
     "width_in",
@@ -75,6 +73,7 @@ class DisplayProductPartSerializer(serializers.ModelSerializer):
             "description",
             "customs_description",
             "hsn_code",
+            "hts_code",
             "product_weight_kg",
             "length_in",
             "width_in",
@@ -86,8 +85,6 @@ class DisplayProductPartSerializer(serializers.ModelSerializer):
         # above holds none of these for a multi-part SKU.
         extra_kwargs = {
             "name": {"required": True, "allow_blank": False},
-            "customs_description": {"required": True, "allow_blank": False},
-            "hsn_code": {"required": True, "allow_blank": False},
             **{
                 field: {"required": True, "allow_null": False}
                 for field in PIECE_REQUIRED
@@ -114,6 +111,7 @@ class DisplayProductSerializer(serializers.ModelSerializer):
             "category_name",
             "customs_description",
             "hsn_code",
+            "hts_code",
             "is_multi_part",
             "status",
             "product_weight_kg",

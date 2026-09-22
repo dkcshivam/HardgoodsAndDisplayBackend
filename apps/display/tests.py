@@ -42,6 +42,7 @@ def display_part(**overrides):
         "name": "Part",
         "customs_description": "Decorative display part",
         "hsn_code": "9505",
+        "hts_code": "9505.10.5020",
         "product_weight_kg": "0.400",
         "length_in": "12.00",
         "width_in": "8.00",
@@ -58,6 +59,7 @@ def display_product(**overrides):
         "description": "Display item",
         "customs_description": "Decorative display item",
         "hsn_code": "9505",
+        "hts_code": "9505.10.5020",
         "product_weight_kg": "0.500",
         "length_in": "24.00",
         "width_in": "24.00",
@@ -780,6 +782,19 @@ class DisplayPackingListTests(APITestCase):
 
         self.assertEqual(self.column("Store No"), [118])
 
+    def test_the_invoice_prints_the_hts_code_not_the_hsn(self):
+        """The buyer's customs clear on the US tariff code, not India's HSN."""
+        DisplayProduct.objects.filter(pk=self.bow.pk).update(
+            hsn_code="9505", hts_code="9505.10.5020"
+        )
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+
+        response = self.client.get(
+            f"/api/display-orders/{self.order.id}/invoice-data/"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["lines"][0][1:3], ["DSP-BOW-12", "9505.10.5020"])
+
 
 class DisplayOrderNumberTests(TestCase):
     def test_numbers_run_sequentially_within_the_year(self):
@@ -921,6 +936,35 @@ class DisplayProductShapeTests(APITestCase):
         )
 
         self.assertEqual(DisplayProductPart.objects.filter(pk=ids[1]).count(), 0)
+
+    CUSTOMS = ("customs_description", "hsn_code", "hts_code")
+
+    def test_a_part_may_leave_its_customs_fields_blank(self):
+        body = self.payload()
+        for field in self.CUSTOMS:
+            del body["parts"][0][field]
+            body["parts"][1][field] = ""
+        response = self.client.post(self.URL, body, format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+
+    def test_a_single_piece_product_may_leave_its_customs_fields_blank(self):
+        body = display_product()
+        for field in self.CUSTOMS:
+            del body[field]
+        response = self.client.post(self.URL, body, format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual([response.data[field] for field in self.CUSTOMS], ["", "", ""])
+
+    def test_the_hsn_code_is_kept_beside_the_hts_code(self):
+        response = self.client.post(self.URL, display_product(), format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(
+            (response.data["hsn_code"], response.data["hts_code"]),
+            ("9505", "9505.10.5020"),
+        )
 
 
 class PieceCountingTests(TestCase):

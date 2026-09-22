@@ -19,6 +19,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         "description",
         "customs_description",
         "hsn_code",
+        "hts_code",
     ]
     ordering_fields = ["style_no", "style_name", "description", "created_at"]
 

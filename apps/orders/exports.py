@@ -112,7 +112,7 @@ def invoice_document(order: Order) -> invoice_kit.Document:
         invoice.add(
             product.id,
             style_no=product.style_no,
-            hts_code=_hsn(product),
+            hts_code=_hts(product),
             description=_customs(product),
             quantity=reconciled.packed,
             net_weight_kg=_unit_weight(product) * reconciled.packed,
@@ -140,11 +140,14 @@ def build_invoice(order: Order) -> BytesIO:
     return stream
 
 
-def _hsn(product) -> str:
-    """A part's code where the product has none — they may differ per part."""
-    if product.hsn_code:
-        return product.hsn_code
-    return next((part.hsn_code for part in product.parts.all() if part.hsn_code), "")
+def _hts(product) -> str:
+    """
+    The US tariff code, never the HSN: the buyer's customs clear on HTS. A
+    part's code where the product has none — they may differ per part.
+    """
+    if product.hts_code:
+        return product.hts_code
+    return next((part.hts_code for part in product.parts.all() if part.hts_code), "")
 
 
 def _customs(product) -> str:

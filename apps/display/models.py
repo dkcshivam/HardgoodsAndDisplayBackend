@@ -49,6 +49,8 @@ class DisplayProduct(TimeStampedModel):
     )
     customs_description = models.CharField(max_length=255, blank=True)
     hsn_code = models.CharField(max_length=20, blank=True)
+    # The US tariff code the invoice prints; HSN is India's, for export.
+    hts_code = models.CharField(max_length=20, blank=True)
 
     # Fixed at creation: every template item, step and carton already written
     # against this SKU assumed one shape or the other.
@@ -136,6 +138,7 @@ class DisplayProductPart(models.Model):
     # Held per part: parts of different materials classify differently.
     customs_description = models.CharField(max_length=255, blank=True)
     hsn_code = models.CharField(max_length=20, blank=True)
+    hts_code = models.CharField(max_length=20, blank=True)
 
     product_weight_kg = models.DecimalField(
         "part weight (kg)",

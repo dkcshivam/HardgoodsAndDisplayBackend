@@ -21,6 +21,7 @@ class DisplayProductPartInline(admin.TabularInline):
         "name",
         "customs_description",
         "hsn_code",
+        "hts_code",
         "product_weight_kg",
         ("length_in", "width_in", "height_in"),
     )
@@ -56,7 +57,7 @@ class DisplayProductAdmin(admin.ModelAdmin):
                 )
             },
         ),
-        ("Customs", {"fields": ("customs_description", "hsn_code")}),
+        ("Customs", {"fields": ("customs_description", "hsn_code", "hts_code")}),
         (
             "Size and weight",
             {

@@ -58,6 +58,11 @@ class Product(PackSpec, TimeStampedModel):
     hsn_code = models.CharField(
         max_length=20, blank=True, help_text="Harmonized System Nomenclature code."
     )
+    # India's HSN clears the goods out; the invoice goes to a US buyer, whose
+    # customs classify them under the US tariff schedule instead.
+    hts_code = models.CharField(
+        max_length=20, blank=True, help_text="US Harmonized Tariff Schedule code."
+    )
 
     # Fixed at creation: every carton, order line and packing plan already
     # written against this SKU assumed one shape or the other.
@@ -160,6 +165,7 @@ class ProductPart(PackSpec):
 
     customs_description = models.CharField(max_length=255, blank=True)
     hsn_code = models.CharField(max_length=20, blank=True)
+    hts_code = models.CharField(max_length=20, blank=True)
 
     # The part itself, not its box.
     length_in = models.DecimalField(
