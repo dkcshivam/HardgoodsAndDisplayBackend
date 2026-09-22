@@ -28,7 +28,8 @@ LAYOUT = sheet_kit.Layout(
     columns=[
         # Wide enough for the order facts above the table, which share it.
         ("SNO", 10, "0"),
-        ("Carton Nos", 20, None),
+        # A number format so a lone box and a `10 – 14` run align alike.
+        ("Carton Nos", 20, "0"),
         ("Total No of Boxes", 9, "0"),
         ("Store No", 12, None),
         ("Style No", 18, None),

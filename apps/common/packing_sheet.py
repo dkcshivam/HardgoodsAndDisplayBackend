@@ -123,7 +123,7 @@ class Group:
     cartons: list = field(default_factory=list)
     # Set where the document numbers its own rows; empty prints the numbers
     # stored on the cartons.
-    label: str = ""
+    label: str | int = ""
 
     def rows(self) -> list[list]:
         count = len(self.cartons)
@@ -243,10 +243,6 @@ def carton_range(cartons: list) -> str:
     )
 
 
-def box_no(number: int) -> str:
-    return f"BOX-{number:03d}"
-
-
 def number_groups(groups: list[Group], start: int = 1) -> int:
     """
     Number the rows in the order the sheet writes them, and hand back the
@@ -257,12 +253,13 @@ def number_groups(groups: list[Group], start: int = 1) -> int:
     store whose run starts at 003. Numbering as we write gives every row one
     unbroken run and the page one ascending column. `start` threads across the
     blocks so the shipment keeps a single sequence (§10.6).
+
+    Plain numbers, as the shipping desk writes them: a lone box is the number
+    itself, so Excel stores it as one, and a run reads `10 – 14`.
     """
     for group in groups:
         last = start + len(group.cartons) - 1
-        group.label = (
-            box_no(start) if start == last else f"{box_no(start)} – {box_no(last)}"
-        )
+        group.label = start if start == last else f"{start} – {last}"
         start = last + 1
     return start
 

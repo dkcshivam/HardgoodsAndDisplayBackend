@@ -701,7 +701,7 @@ class DisplayPackingListTests(APITestCase):
 
         self.assertEqual(self.column("Store No"), [118, 204])
         self.assertEqual(
-            self.column("Carton Nos"), ["BOX-001 – BOX-002", "BOX-003"]
+            self.column("Carton Nos"), ["1 – 2", 3]
         )
         self.assertEqual(self.column("Total No of Boxes"), [2, 1])
 
@@ -714,7 +714,7 @@ class DisplayPackingListTests(APITestCase):
         services.apply_step(self.order, mixed, self.portland, count=1)
 
         self.assertEqual(self.column("Store No"), [118, None])
-        self.assertEqual(self.column("Carton Nos"), ["BOX-001", None])
+        self.assertEqual(self.column("Carton Nos"), [1, None])
 
     def test_every_row_gets_a_serial_number(self):
         tree = product("DSP-TRE-60", 3.40, (30, 22, 6))
@@ -765,7 +765,7 @@ class DisplayPackingListTests(APITestCase):
         services.apply_step(self.order, self.tpl, self.portland, count=1)
 
         self.assertEqual(
-            self.column("Carton Nos"), ["BOX-001 – BOX-003", "BOX-004 – BOX-006"]
+            self.column("Carton Nos"), ["1 – 3", "4 – 6"]
         )
 
     def test_the_numbering_does_not_restart_in_the_second_store(self):
@@ -773,7 +773,7 @@ class DisplayPackingListTests(APITestCase):
         services.apply_step(self.order, self.tpl, self.portland, count=1)
         services.apply_step(self.order, self.tpl, self.austin, count=1)
 
-        self.assertEqual(self.column("Carton Nos"), ["BOX-001", "BOX-002"])
+        self.assertEqual(self.column("Carton Nos"), [1, 2])
 
     def test_a_store_with_no_cartons_is_left_out(self):
         services.apply_step(self.order, self.tpl, self.portland, count=1)
