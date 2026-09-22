@@ -1,14 +1,14 @@
 """
 The Display packing list, in store order.
 
-A carton ships to exactly one store, so the sheet is blocked by store: each
-one opens with its name and address, carries its own rows, and closes with
-its own subtotal. That is the shape the warehouse reads it in — they are
-picking a pallet per store, not per order — and it is the shape a customs
-broker checks it in.
+A carton ships to exactly one store, so the sheet runs store by store in the
+order's sequence, naming the store on the first row of its run. The layout
+follows the list the shipping desk made by hand (`PL 001.xlsx`): a serial
+number per row, the box count, the store, then each box's sides in inches and
+in centimetres.
 
-The grouping and sheet furniture are shared with Hardgoods; only the blocking
-is particular to Display.
+The grouping and sheet furniture are shared with Hardgoods; the columns and
+the store run are particular to Display.
 """
 
 from collections import Counter
@@ -24,17 +24,36 @@ from . import services
 from .models import DisplayOrder, DisplayProduct
 
 
-# The carton count goes: "BOX-001 – BOX-012" already says twelve. The store
-# is not a column either — every row already sits under the banner naming the
-# store it ships to, and repeating it on all 563 rows only makes the sheet
-# wider than a page.
-_DROPPED = "Cartons"
-
 LAYOUT = sheet_kit.Layout(
     columns=[
-        column for column in sheet_kit.COLUMNS if column[0] != _DROPPED
+        # Wide enough for the order facts above the table, which share it.
+        ("SNO", 10, "0"),
+        ("Carton Nos", 20, None),
+        ("Total No of Boxes", 9, "0"),
+        ("Store No", 12, None),
+        ("Style No", 18, None),
+        ("Customs Description", 34, None),
+        ("Qty / Box", 9, "0"),
+        ("Units", 8, None),
+        ("NNW (kg)", 11, "0.000"),
+        ("N.W. (kg)", 11, "0.000"),
+        ("G.W. (kg)", 11, "0.000"),
+        ("L (in)", 9, "0.00"),
+        ("W (in)", 9, "0.00"),
+        ("H (in)", 9, "0.00"),
+        ("L (cm)", 9, "0.00"),
+        ("W (cm)", 9, "0.00"),
+        ("H (cm)", 9, "0.00"),
+        ("CBM", 10, "0.0000"),
     ],
-    totalled=sheet_kit.TOTALLED - {_DROPPED},
+    totalled={
+        "Total No of Boxes",
+        "Qty / Box",
+        "NNW (kg)",
+        "N.W. (kg)",
+        "G.W. (kg)",
+        "CBM",
+    },
 )
 
 
@@ -56,16 +75,28 @@ def packing_list_filename(order: DisplayOrder) -> str:
     return f"packing-list-{order.number}.xlsx"
 
 
-_KEPT = [
-    index
-    for index, (label, _, _) in enumerate(sheet_kit.COLUMNS)
-    if label != _DROPPED
-]
-
-
-def _for_sheet(values: list) -> list:
-    """A canonical row from the shared kit, minus the columns we do not print."""
-    return [values[index] for index in _KEPT]
+def _for_sheet(serial: int, store_no, sample, values: list, opens: bool) -> list:
+    """
+    A canonical row from the shared kit, laid out in Display's columns. The
+    inches are the box's own; the centimetres are the kit's, converted from
+    them, and the CBM is worked from those centimetres.
+    """
+    label, count, *item, length_cm, width_cm, height_cm, cbm = values
+    inches = (
+        [sample.length_in, sample.width_in, sample.height_in] if opens else [None] * 3
+    )
+    return [
+        serial,
+        label,
+        count,
+        store_no,
+        *item,
+        *inches,
+        length_cm,
+        width_cm,
+        height_cm,
+        cbm,
+    ]
 
 
 def packing_document(order: DisplayOrder) -> sheet_kit.Document:
@@ -84,32 +115,31 @@ def packing_document(order: DisplayOrder) -> sheet_kit.Document:
     # stored numbers run in step order, which interleaves the stores this
     # sheet is blocked by. See `number_groups` and §10.6.
     next_box = 1
+    serial = 0
 
     for store in _stores_in_order(order, by_store):
         cartons_here = by_store.get(store.id, [])
         if not cartons_here:
             continue
 
-        store_totals = sheet_kit.Totals()
         rows = []
         groups = sheet_kit.group_cartons(cartons_here)
         next_box = sheet_kit.number_groups(groups, next_box)
         for group in groups:
-            store_totals.add(group)
+            order_totals.add(group)
             for position, values in enumerate(group.rows()):
-                rows.append((_for_sheet(values), position == 0))
+                serial += 1
+                opens = position == 0
+                # Named once, where its run starts, as the hand-made list does.
+                store_no = _store_no(store) if not rows else None
+                rows.append(
+                    (
+                        _for_sheet(serial, store_no, group.cartons[0], values, opens),
+                        opens,
+                    )
+                )
 
-        blocks.append(
-            sheet_kit.Block(
-                rows=rows,
-                banner=_store_label(store),
-                subtotal=store_totals,
-                subtotal_label=(
-                    f"{store.name} subtotal · all {_boxes(store_totals.cartons)}"
-                ),
-            )
-        )
-        order_totals.merge(store_totals)
+        blocks.append(sheet_kit.Block(rows=rows))
 
     stores = {line.store_id for line in order.lines.all()}
     return sheet_kit.Document(
@@ -157,21 +187,9 @@ def _stores_in_order(order: DisplayOrder, by_store: dict) -> list:
     return stores
 
 
-def _store_label(store) -> str:
-    address = ", ".join(
-        part
-        for part in (
-            store.ship_line1,
-            store.ship_line2,
-            store.ship_city,
-            store.ship_state,
-            store.ship_postal_code,
-            store.ship_country,
-        )
-        if part
-    )
-    head = f"STORE {store.name}"
-    return f"{head} — {address}" if address else head
+def _store_no(store):
+    """A number where the name is one, so Excel does not flag it as text."""
+    return int(store.name) if store.name.isdigit() else store.name
 
 
 def invoice_document(order: DisplayOrder) -> invoice_kit.Document:

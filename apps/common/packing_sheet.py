@@ -336,6 +336,7 @@ class Totals:
     def by_column(self) -> dict:
         return {
             "Cartons": self.cartons,
+            "Total No of Boxes": self.cartons,
             "Qty / Box": self.quantity,
             "NNW (kg)": self.nnw_kg,
             "N.W. (kg)": self.net_kg,

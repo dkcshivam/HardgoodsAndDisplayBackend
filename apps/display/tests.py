@@ -648,8 +648,30 @@ class DisplayPackingListTests(APITestCase):
             [cell.value for cell in row] for row in book[self.order.number].iter_rows()
         ]
 
+    def table(self):
+        """The header, the item rows under it, and the total row last."""
+        rows = self.rows()
+        at = next(index for index, row in enumerate(rows) if "Style No" in row)
+        return rows[at], rows[at + 1 : -1], rows[-1]
 
-    def test_the_json_document_blocks_by_store_like_the_sheet(self):
+    def column(self, label):
+        header, body, _ = self.table()
+        return [row[header.index(label)] for row in body]
+
+    def test_the_columns_follow_the_hand_made_list(self):
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        header, _, _ = self.table()
+        self.assertEqual(
+            header,
+            [
+                "SNO", "Carton Nos", "Total No of Boxes", "Store No", "Style No",
+                "Customs Description", "Qty / Box", "Units", "NNW (kg)",
+                "N.W. (kg)", "G.W. (kg)", "L (in)", "W (in)", "H (in)",
+                "L (cm)", "W (cm)", "H (cm)", "CBM",
+            ],
+        )
+
+    def test_the_json_document_carries_what_the_sheet_does(self):
         """One builder feeds both, so the PDF and the .xlsx cannot drift."""
         services.apply_step(self.order, self.tpl, self.portland, count=1)
         services.apply_step(self.order, self.tpl, self.austin, count=1)
@@ -660,94 +682,80 @@ class DisplayPackingListTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         document = response.data
 
-        self.assertEqual(len(document["blocks"]), 2)
-        self.assertIn("STORE 118", document["blocks"][0]["banner"])
-        self.assertIn("Portland", document["blocks"][0]["banner"])
-
-        banners = [row for row in self.rows() if row[0] and "STORE" in str(row[0])]
+        header, body, _ = self.table()
+        self.assertEqual([column["label"] for column in document["columns"]], header)
         self.assertEqual(
-            [block["banner"] for block in document["blocks"]],
-            [row[0] for row in banners],
-        )
-
-        # Every store subtotal, added up, is the order total the footer prints.
-        quantity = document["columns"].index(
-            next(c for c in document["columns"] if c["label"] == "Qty / Box")
-        )
-        self.assertEqual(
-            sum(block["subtotal"][quantity] for block in document["blocks"]),
-            document["total"][quantity],
+            [row["values"] for block in document["blocks"] for row in block["rows"]],
+            body,
         )
 
     def test_no_cartons_is_a_400_not_an_empty_sheet(self):
         response = self.client.get(self.url())
         self.assertEqual(response.status_code, 400)
 
-    def test_each_store_gets_its_own_block_and_subtotal(self):
-        services.apply_step(self.order, self.tpl, self.portland, count=1)
-        services.apply_step(self.order, self.tpl, self.austin, count=1)
-
-        flat = "\n".join(
-            " ".join(str(cell) for cell in row if cell is not None)
-            for row in self.rows()
-        )
-
-        self.assertIn("STORE 118", flat)
-        self.assertIn("Portland", flat)
-        self.assertIn("STORE 204", flat)
-        self.assertIn("118 subtotal · all 1 box", flat)
-        self.assertIn("204 subtotal · all 1 box", flat)
-        self.assertIn("ORDER TOTAL · all 2 boxes", flat)
-
-    def test_the_order_total_counts_every_box_once(self):
-        """
-        The subtotals sit between the blocks, so an order total that swept the
-        whole sheet would count each carton twice — once as itself and once
-        inside its store's subtotal.
-        """
-        services.apply_step(self.order, self.tpl, self.portland, count=1)
-        services.apply_step(self.order, self.tpl, self.austin, count=1)
-
-        rows = self.rows()
-        header = next(row for row in rows if "Style No" in row)
-        qty = header.index("Qty / Box")
-
-        def figure(prefix):
-            return [
-                row[qty]
-                for row in rows
-                if row[0] and prefix(str(row[0]))
-            ]
-
-        subtotals = figure(lambda label: "subtotal" in label)
-        total = figure(lambda label: label.startswith("ORDER TOTAL"))
-
-        self.assertEqual(len(subtotals), 2)
-        self.assertEqual(total, [sum(subtotals)])
-        self.assertEqual(total, [60])
-
-    def test_neither_the_store_nor_the_carton_count_gets_a_column(self):
-        """The banner above the block already says which store it ships to."""
+    def test_the_store_is_named_once_where_its_run_starts(self):
         # Two cartons for one store, so the range notation is exercised too.
         self.order.lines.filter(store=self.portland).update(quantity=60)
         services.apply_step(self.order, self.tpl, self.portland, count=2)
         services.apply_step(self.order, self.tpl, self.austin, count=1)
 
-        rows = self.rows()
-        header = next(row for row in rows if "Style No" in row)
+        self.assertEqual(self.column("Store No"), [118, 204])
+        self.assertEqual(
+            self.column("Carton Nos"), ["BOX-001 – BOX-002", "BOX-003"]
+        )
+        self.assertEqual(self.column("Total No of Boxes"), [2, 1])
 
-        self.assertEqual(header[0], "Carton Nos")
-        self.assertNotIn("Store", header)
-        self.assertNotIn("Cartons", header)
+    def test_a_mixed_box_names_its_store_only_on_the_first_row(self):
+        tree = product("DSP-TRE-60", 3.40, (30, 22, 6))
+        DisplayOrderLine.objects.create(
+            order=self.order, store=self.portland, product=tree, quantity=2
+        )
+        mixed = template("TPL-MIX", [(self.bow, 30), (tree, 2)])
+        services.apply_step(self.order, mixed, self.portland, count=1)
 
-        packed = [row for row in rows if row[0] and str(row[0]).startswith("BOX-")]
-        self.assertEqual(packed[0][0], "BOX-001 – BOX-002")
-        self.assertEqual(len(packed), 2)
+        self.assertEqual(self.column("Store No"), [118, None])
+        self.assertEqual(self.column("Carton Nos"), ["BOX-001", None])
 
-    def test_every_store_block_reads_as_one_unbroken_ascending_run(self):
+    def test_every_row_gets_a_serial_number(self):
+        tree = product("DSP-TRE-60", 3.40, (30, 22, 6))
+        DisplayOrderLine.objects.create(
+            order=self.order, store=self.portland, product=tree, quantity=2
+        )
+        services.apply_step(
+            self.order, template("TPL-MIX", [(self.bow, 30), (tree, 2)]),
+            self.portland, count=1,
+        )
+        services.apply_step(self.order, self.tpl, self.austin, count=1)
+
+        self.assertEqual(self.column("SNO"), [1, 2, 3])
+
+    def test_a_box_is_measured_in_inches_and_centimetres(self):
+        """The CBM is worked from the centimetres printed beside it."""
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        header, body, _ = self.table()
+        row = dict(zip(header, body[0]))
+
+        self.assertEqual(
+            [row["L (in)"], row["W (in)"], row["H (in)"]], [28, 20, 16]
+        )
+        self.assertEqual(
+            [row["L (cm)"], row["W (cm)"], row["H (cm)"]], [71.12, 50.8, 40.64]
+        )
+        self.assertEqual(row["CBM"], round(71.12 * 50.8 * 40.64 / 1_000_000, 4))
+
+    def test_the_order_total_counts_every_box_once(self):
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        services.apply_step(self.order, self.tpl, self.austin, count=1)
+
+        header, _, total = self.table()
+        self.assertEqual(total[0], "ORDER TOTAL · all 2 boxes")
+        self.assertEqual(total[header.index("Qty / Box")], 60)
+        self.assertEqual(total[header.index("Total No of Boxes")], 2)
+
+    def test_every_store_reads_as_one_unbroken_ascending_run(self):
         """
         The stored numbers are assigned in step order, which interleaves the
-        stores. The sheet is blocked by store, so it numbers the rows as it
+        stores. The sheet runs store by store, so it numbers the rows as it
         writes them — down the whole page, first cell to last.
         """
         self.order.lines.update(quantity=90)
@@ -756,37 +764,21 @@ class DisplayPackingListTests(APITestCase):
         services.apply_step(self.order, self.tpl, self.austin, count=3)
         services.apply_step(self.order, self.tpl, self.portland, count=1)
 
-        labels = [
-            str(row[0])
-            for row in self.rows()
-            if row[0] and str(row[0]).startswith("BOX-")
-        ]
-
-        self.assertEqual(labels, ["BOX-001 – BOX-003", "BOX-004 – BOX-006"])
+        self.assertEqual(
+            self.column("Carton Nos"), ["BOX-001 – BOX-003", "BOX-004 – BOX-006"]
+        )
 
     def test_the_numbering_does_not_restart_in_the_second_store(self):
         """Fifty BOX-001s in one shipment is the first miscount — §10.6."""
         services.apply_step(self.order, self.tpl, self.portland, count=1)
         services.apply_step(self.order, self.tpl, self.austin, count=1)
 
-        labels = [
-            str(row[0])
-            for row in self.rows()
-            if row[0] and str(row[0]).startswith("BOX-")
-        ]
-
-        self.assertEqual(labels, ["BOX-001", "BOX-002"])
+        self.assertEqual(self.column("Carton Nos"), ["BOX-001", "BOX-002"])
 
     def test_a_store_with_no_cartons_is_left_out(self):
         services.apply_step(self.order, self.tpl, self.portland, count=1)
 
-        flat = "\n".join(
-            " ".join(str(cell) for cell in row if cell is not None)
-            for row in self.rows()
-        )
-
-        self.assertIn("STORE 118", flat)
-        self.assertNotIn("STORE 204", flat)
+        self.assertEqual(self.column("Store No"), [118])
 
 
 class DisplayOrderNumberTests(TestCase):

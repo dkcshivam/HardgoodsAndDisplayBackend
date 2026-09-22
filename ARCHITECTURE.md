@@ -1081,22 +1081,21 @@ ships 55 cartons. That
 is the same document a customs officer already reads, and it is why steps are
 the right unit of planning as well as of editing.
 
-**Blocked by store.** Each store opens with a banner carrying its name and
-address, carries its own rows, and closes with its own subtotal; the order
-total comes last. That is the shape the sheet is *used* in — the warehouse
-picks a pallet per store, not per order.
+**Run store by store.** The stores follow the order's own sequence — the
+buyer's sheet columns (`DisplayOrderLine.store_position`) — and each store is
+named in a `Store No` column on the first row of its run. There are no store
+banners or subtotals; one order total closes the sheet. That is the layout of
+the list the shipping desk made by hand (`PL 001.xlsx`), which also asked for
+a serial number per row, a `Total No of Boxes` column, and each box's sides in
+inches beside centimetres. The CBM is worked from the centimetres printed.
 
-The grouping, the carton-range notation and the column layout are shared with
-Hardgoods in `apps/common/packing_sheet.py`. The blocking is particular to
-Display, and so is the numbering that follows from it (§10.6) — the box numbers
-in `Carton Nos` are the sheet's own, counted in print order. A shipping desk
-reading one document after the other should not have to learn two conventions.
+The grouping and the carton-range notation are shared with Hardgoods in
+`apps/common/packing_sheet.py`; the columns are Display's own
+(`exports.LAYOUT`), and so is the numbering (§10.6) — the box numbers in
+`Carton Nos` are the sheet's own, counted in print order.
 
-The order total sums the store blocks **by naming each range**, not by spanning
-them: a single span would cross the subtotal rows and count every carton twice.
-Totals are written as formulas rather than values so the sheet stays true if
-somebody edits a quantity after it leaves here — which is exactly why the
-double-count would otherwise have survived a proofread.
+The total is a value worked out from the grouping, not a column sum: a row can
+stand for several identical boxes while printing one box's figures.
 
 ### 10.9 Still open
 
