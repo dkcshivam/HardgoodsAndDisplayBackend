@@ -1016,9 +1016,25 @@ each one (`BOX-001 – BOX-003, BOX-007`).
 
 *Rationale:* an earlier draft renumbered on every edit and froze that at
 `packed`. Not renumbering at all is strictly better — a number on a physical
-carton can never move, at any status, and the packing list already handles the
-gaps. Step *sequences* do close up (1, 2, 3), since those are a planning
-artefact nobody writes on a box.
+carton can never move, at any status. Step *sequences* do close up (1, 2, 3),
+since those are a planning artefact nobody writes on a box.
+
+**The packing list numbers its own rows.** The two rules above reason about
+steps; the sheet is blocked by *store* (§10.8), and a store owns several steps
+that are not adjacent. Printing `carton_no` therefore puts a store's boxes out
+of sequence and the whole column out of order — store 118 reading `BOX-001 –
+BOX-002, BOX-006` above a store whose run starts at 003. The document instead
+numbers the rows as it writes them: store by store, group by group, one
+unbroken run each, ascending from the first cell to the last.
+`packing_sheet.number_groups` does it, threading the count across the blocks so
+a shipment still gets one sequence rather than one per store.
+
+That number is **derived, never stored** — D1 applied to the sheet. `carton_no`
+stays the plan's own record and still never moves, and the two agree exactly
+whenever the stores happened to be packed one after another. Hardgoods keeps
+printing the stored numbers: there they are hand-entered or auto-packed already
+in printing order, and a number somebody typed is not the document's to
+reassign.
 
 ### 10.7 Reconciliation and blockers
 
@@ -1071,9 +1087,10 @@ total comes last. That is the shape the sheet is *used* in — the warehouse
 picks a pallet per store, not per order.
 
 The grouping, the carton-range notation and the column layout are shared with
-Hardgoods in `apps/common/packing_sheet.py`. Only the blocking is particular to
-Display. A shipping desk reading one document after the other should not have
-to learn two conventions.
+Hardgoods in `apps/common/packing_sheet.py`. The blocking is particular to
+Display, and so is the numbering that follows from it (§10.6) — the box numbers
+in `Carton Nos` are the sheet's own, counted in print order. A shipping desk
+reading one document after the other should not have to learn two conventions.
 
 The order total sums the store blocks **by naming each range**, not by spanning
 them: a single span would cross the subtotal rows and count every carton twice.
@@ -1092,6 +1109,10 @@ double-count would otherwise have survived a proofread.
   longer appears on the entry form. It may yet earn its keep as a bill-to.
 - A per-store packing list as a separate document, if a store's copy has to
   travel with its own pallet rather than the whole sheet going to customs.
+- Whether the carton list on screen should show the sheet's box number beside
+  `carton_no`. Since §10.6 they can differ, and a box marked up from the screen
+  rather than from the sheet would then carry the number the sheet does not
+  print. Needs a serializer field and the matching frontend column.
 - Whether a template may be edited after an order has used it. The provenance
   link would then misdescribe boxes already shipped — the same hazard as
   `is_multi_part`, and it probably wants the same answer.

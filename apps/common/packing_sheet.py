@@ -121,13 +121,17 @@ class Group:
 
     contents: list
     cartons: list = field(default_factory=list)
+    # Set where the document numbers its own rows; empty prints the numbers
+    # stored on the cartons.
+    label: str = ""
 
     def rows(self) -> list[list]:
         count = len(self.cartons)
         sample = self.cartons[0]
+        label = self.label or carton_range(self.cartons)
 
         if not self.contents:
-            return [empty_carton_row(sample)]
+            return [empty_carton_row(sample, label)]
 
         built = []
         for position, content in enumerate(self.contents):
@@ -137,7 +141,7 @@ class Group:
             opens = position == 0
             built.append(
                 [
-                    carton_range(self.cartons) if opens else "",
+                    label if opens else "",
                     count if opens else None,
                     content.product.style_no,
                     describe(content),
@@ -239,6 +243,30 @@ def carton_range(cartons: list) -> str:
     )
 
 
+def box_no(number: int) -> str:
+    return f"BOX-{number:03d}"
+
+
+def number_groups(groups: list[Group], start: int = 1) -> int:
+    """
+    Number the rows in the order the sheet writes them, and hand back the
+    next free number.
+
+    `carton_no` runs in step order, and a sheet blocked by store reads those
+    out of sequence — store 118 printing `BOX-001 – BOX-002, BOX-006` above a
+    store whose run starts at 003. Numbering as we write gives every row one
+    unbroken run and the page one ascending column. `start` threads across the
+    blocks so the shipment keeps a single sequence (§10.6).
+    """
+    for group in groups:
+        last = start + len(group.cartons) - 1
+        group.label = (
+            box_no(start) if start == last else f"{box_no(start)} – {box_no(last)}"
+        )
+        start = last + 1
+    return start
+
+
 def times(value: Decimal | None, count: int) -> Decimal | None:
     return None if value is None else value * count
 
@@ -338,9 +366,9 @@ def _names(product) -> str:
     )
 
 
-def empty_carton_row(carton) -> list:
+def empty_carton_row(carton, label: str | None = None) -> list:
     return [
-        carton_range([carton]),
+        label if label is not None else carton_range([carton]),
         1,
         "",
         "(empty carton)",

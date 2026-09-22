@@ -744,6 +744,39 @@ class DisplayPackingListTests(APITestCase):
         self.assertEqual(packed[0][0], "BOX-001 – BOX-002")
         self.assertEqual(len(packed), 2)
 
+    def test_every_store_block_reads_as_one_unbroken_ascending_run(self):
+        """
+        The stored numbers are assigned in step order, which interleaves the
+        stores. The sheet is blocked by store, so it numbers the rows as it
+        writes them — down the whole page, first cell to last.
+        """
+        self.order.lines.update(quantity=90)
+        # Interleaved on purpose: Portland, Austin, Portland again.
+        services.apply_step(self.order, self.tpl, self.portland, count=2)
+        services.apply_step(self.order, self.tpl, self.austin, count=3)
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+
+        labels = [
+            str(row[0])
+            for row in self.rows()
+            if row[0] and str(row[0]).startswith("BOX-")
+        ]
+
+        self.assertEqual(labels, ["BOX-001 – BOX-003", "BOX-004 – BOX-006"])
+
+    def test_the_numbering_does_not_restart_in_the_second_store(self):
+        """Fifty BOX-001s in one shipment is the first miscount — §10.6."""
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        services.apply_step(self.order, self.tpl, self.austin, count=1)
+
+        labels = [
+            str(row[0])
+            for row in self.rows()
+            if row[0] and str(row[0]).startswith("BOX-")
+        ]
+
+        self.assertEqual(labels, ["BOX-001", "BOX-002"])
+
     def test_a_store_with_no_cartons_is_left_out(self):
         services.apply_step(self.order, self.tpl, self.portland, count=1)
 

@@ -80,6 +80,10 @@ def packing_document(order: DisplayOrder) -> sheet_kit.Document:
 
     order_totals = sheet_kit.Totals()
     blocks = []
+    # The sheet numbers its own boxes rather than printing `carton_no`: the
+    # stored numbers run in step order, which interleaves the stores this
+    # sheet is blocked by. See `number_groups` and §10.6.
+    next_box = 1
 
     for store in _stores_in_order(order, by_store):
         cartons_here = by_store.get(store.id, [])
@@ -88,7 +92,9 @@ def packing_document(order: DisplayOrder) -> sheet_kit.Document:
 
         store_totals = sheet_kit.Totals()
         rows = []
-        for group in sheet_kit.group_cartons(cartons_here):
+        groups = sheet_kit.group_cartons(cartons_here)
+        next_box = sheet_kit.number_groups(groups, next_box)
+        for group in groups:
             store_totals.add(group)
             for position, values in enumerate(group.rows()):
                 rows.append((_for_sheet(values), position == 0))
