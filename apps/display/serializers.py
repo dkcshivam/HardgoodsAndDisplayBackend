@@ -514,13 +514,27 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
             )
 
     @staticmethod
-    def _write_lines(order, lines):
+    def _store_positions(lines) -> dict[int, int]:
+        """
+        The stores in the order the payload first names them. The form sends
+        its lines store by store in the sheet's column order, so this is the
+        sheet's order without the API needing a second list to keep in step.
+        """
+        positions: dict[int, int] = {}
+        for line in lines:
+            positions.setdefault(line["store"].id, len(positions) + 1)
+        return positions
+
+    @classmethod
+    def _write_lines(cls, order, lines):
+        positions = cls._store_positions(lines)
         for line in lines:
             line.pop("id", None)
+            line["store_position"] = positions[line["store"].id]
             DisplayOrderLine.objects.create(order=order, **line)
 
-    @staticmethod
-    def _sync_lines(order, lines_data):
+    @classmethod
+    def _sync_lines(cls, order, lines_data):
         """
         Match payload rows to the lines they edit by store and product — the
         pair is unique per order, and it is the key the cartons are counted
@@ -537,9 +551,11 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
             for line in order.lines.select_related("store", "product")
         }
         kept = set()
+        positions = cls._store_positions(lines_data)
 
         for data in lines_data:
             data.pop("id", None)
+            data["store_position"] = positions[data["store"].id]
             key = (data["store"].id, data["product"].id)
             line = existing.get(key)
 

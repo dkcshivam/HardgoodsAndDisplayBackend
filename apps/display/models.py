@@ -513,9 +513,13 @@ class DisplayOrderLine(models.Model):
     )
     quantity = models.PositiveIntegerField()
     color = models.CharField(max_length=60, blank=True)
+    # Where this line's store sits in the order — the column it had on the
+    # buyer's sheet. Every screen and document walks the stores in this order;
+    # sorting by name put "1839" before "804".
+    store_position = models.PositiveIntegerField(default=0)
 
     class Meta:
-        ordering = ["store__name", "id"]
+        ordering = ["store_position", "id"]
         constraints = [
             models.UniqueConstraint(
                 fields=["order", "store", "product"],

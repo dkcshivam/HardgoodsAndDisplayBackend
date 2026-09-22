@@ -444,6 +444,63 @@ class OrderLineStoreTests(APITestCase):
         with self.assertRaises(Exception):
             self.portland.delete()
 
+    def test_stores_keep_the_order_the_sheet_gave_them(self):
+        """
+        Neither by name ("1839" before "804") nor by number: the sheet's own
+        column order, which is the first time the payload names each store.
+        """
+        first, second, third = store("900"), store("1839"), store("804")
+        response = self.client.post(
+            "/api/display-orders/",
+            self.payload(
+                [
+                    self.line(first, self.wreath, 6),
+                    self.line(second, self.wreath, 6),
+                    self.line(first, self.tree, 2),
+                    self.line(third, self.wreath, 6),
+                ]
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+
+        order = DisplayOrder.objects.get(pk=response.data["id"])
+        names = [outlet.name for outlet in services.order_stores(order)]
+        self.assertEqual(names, ["900", "1839", "804"])
+        self.assertEqual(
+            [row["store_name"] for row in response.data["lines"]],
+            ["900", "900", "1839", "804"],
+        )
+
+    def test_an_edit_can_change_the_store_order(self):
+        created = self.client.post(
+            "/api/display-orders/",
+            self.payload(
+                [
+                    self.line(self.portland, self.wreath, 6),
+                    self.line(self.austin, self.wreath, 6),
+                ]
+            ),
+            format="json",
+        ).data
+
+        response = self.client.patch(
+            f"/api/display-orders/{created['id']}/",
+            {
+                "lines": [
+                    self.line(self.austin, self.wreath, 6),
+                    self.line(self.portland, self.wreath, 6),
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        order = DisplayOrder.objects.get(pk=created["id"])
+        self.assertEqual(
+            [outlet.name for outlet in services.order_stores(order)], ["204", "118"]
+        )
+
 
 class StorePackingTests(TestCase):
     """
