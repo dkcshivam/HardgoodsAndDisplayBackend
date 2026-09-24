@@ -37,6 +37,11 @@ ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 # localhost request sends no such header and is unaffected.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+# That proxy also rewrites Host to the container name, so absolute image URLs
+# came back on http://backend:8000 — a name only Docker can resolve. Trust the
+# forwarded host so they are built on the origin the browser actually used.
+USE_X_FORWARDED_HOST = True
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -154,3 +159,57 @@ CORS_ALLOWED_ORIGINS = env_list(
 )
 CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+
+
+# ── Export documents (Packing List & Invoice) ─────────────────────────
+
+PACKING_LIST_HEADER = {
+    # If True, highlights static fields with yellow fill matching the export specification.
+    # Set to False for clean white production print.
+    "highlight_static": True,
+    # Exporter details (yellow / static)
+    "exporter": [
+        "DKC EXPORTS PVT. LTD.",
+        "A-4, SHIV MARG,GREEN AVN. , CHURCH ROAD",
+        "VASANT KUNJ , NEW DELHI 110070",
+        "INDIA",
+        "",
+        "Tel- + 9111 26124358",
+    ],
+    # Exporter registration numbers (yellow / static)
+    "exporter_ref_no": "IEC No 0506081460",
+    "gstin": "07AACCD0416A1ZJ",
+    # Consignee details (yellow / static)
+    "consignee": [
+        "URBAN OUTFITTERS INC",
+        "5000 SOUTH BROAD STREET",
+        "PHILADELPHIA",
+        "PA 19112-1495",
+        "USA",
+        "",
+        "PH:-(215) 454-5500",
+        "FAX:-(215) 454-4660",
+    ],
+    # Regulatory, tax and origin codes (yellow / static)
+    "statutory_details": [
+        ("State of Origin Code", "07"),
+        ("District of Origin Code", "84"),
+        ("SQC", "PCS"),
+        ("Pref. Agreements", "GSTP"),
+        ("GST Comp. Cess", "N/A"),
+        ("STATEMENT TYPE = DEC", "0"),
+        ("STATEMENT CODE = RD001", "0"),
+    ],
+    # Origin and transport defaults (yellow / static)
+    "country_of_origin": "INDIA",
+    "pre_carriage_by": "ROAD",
+    # Terms of delivery, payment and shipping marks (yellow / static)
+    "terms_and_marks": [
+        ("TERM OF DELIVERY OF PAYMENT", "FOB"),
+        ("PAYMENT BY", "LC"),
+        ("SHIPPING MARK", "URBAN OUTFITTERS INC"),
+        ("SHIPPING LINE", ""),
+        ("CONTAINER NO", ""),
+    ],
+}
+

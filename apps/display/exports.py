@@ -145,6 +145,7 @@ def packing_document(order: DisplayOrder) -> sheet_kit.Document:
     stores = {line.store_id for line in order.lines.all()}
     return sheet_kit.Document(
         title="PACKING LIST",
+        order_title=order.name,
         facts=[
             ("Order", order.number),
             ("Name", order.name),

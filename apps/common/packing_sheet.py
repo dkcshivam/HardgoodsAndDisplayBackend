@@ -15,6 +15,7 @@ import re
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
 
+from django.conf import settings
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -471,6 +472,565 @@ def write_totals(
         cell.alignment = Alignment(horizontal="right")
 
 
+# ── Header grid for export packing list ──────────────────────────────
+
+THIN_RULE = Side(style="thin", color="000000")
+
+YELLOW_HEX = "EFE924"
+YELLOW_FILL = PatternFill("solid", fgColor=YELLOW_HEX)
+WHITE_FILL = PatternFill("solid", fgColor="FFFFFF")
+
+HDR_LABEL_FONT = Font(name="Calibri", size=8, bold=True, color="000000")
+HDR_VALUE_FONT = Font(name="Calibri", size=9, bold=False, color="000000")
+HDR_VALUE_BOLD = Font(name="Calibri", size=9, bold=True, color="000000")
+HDR_STAT_FONT = Font(name="Calibri", size=8.5, bold=True, color="000000")
+HDR_TITLE_FONT = Font(name="Calibri", size=11, bold=True, italic=True, color="000000")
+
+DEFAULT_PACKING_LIST_HEADER = {
+    "highlight_static": True,
+    "exporter": [
+        "DKC EXPORTS PVT. LTD.",
+        "A-4, SHIV MARG,GREEN AVN. , CHURCH ROAD",
+        "VASANT KUNJ , NEW DELHI 110070",
+        "INDIA",
+        "",
+        "Tel- + 9111 26124358",
+    ],
+    "exporter_ref_no": "IEC No 0506081460",
+    "gstin": "07AACCD0416A1ZJ",
+    "consignee": [
+        "URBAN OUTFITTERS INC",
+        "5000 SOUTH BROAD STREET",
+        "PHILADELPHIA",
+        "PA 19112-1495",
+        "USA",
+        "",
+        "PH:-(215) 454-5500",
+        "FAX:-(215) 454-4660",
+    ],
+    "statutory_details": [
+        ("State of Origin Code", "07"),
+        ("District of Origin Code", "84"),
+        ("SQC", "PCS"),
+        ("Pref. Agreements", "GSTP"),
+        ("GST Comp. Cess", "N/A"),
+        ("STATEMENT TYPE = DEC", "0"),
+        ("STATEMENT CODE = RD001", "0"),
+    ],
+    "country_of_origin": "INDIA",
+    "pre_carriage_by": "ROAD",
+    "terms_and_marks": [
+        ("TERM OF DELIVERY OF PAYMENT", "FOB"),
+        ("PAYMENT BY", "LC"),
+        ("SHIPPING MARK", "URBAN OUTFITTERS INC"),
+        ("SHIPPING LINE", ""),
+        ("CONTAINER NO", ""),
+    ],
+}
+
+
+def draw_box(
+    sheet,
+    start_row: int,
+    start_col: int,
+    end_row: int,
+    end_col: int,
+    fill=None,
+    top_rule=THIN_RULE,
+    bottom_rule=THIN_RULE,
+    left_rule=THIN_RULE,
+    right_rule=THIN_RULE,
+):
+    """Draws perimeter borders for a box range and applies fill to every cell."""
+    for r in range(start_row, end_row + 1):
+        for c in range(start_col, end_col + 1):
+            cell = sheet.cell(row=r, column=c)
+            cell.border = Border(
+                top=top_rule if r == start_row else None,
+                bottom=bottom_rule if r == end_row else None,
+                left=left_rule if c == start_col else None,
+                right=right_rule if c == end_col else None,
+            )
+            if fill:
+                cell.fill = fill
+
+
+def write_block(
+    sheet,
+    label_row: int,
+    content_start_row: int,
+    content_end_row: int,
+    start_col: int,
+    end_col: int,
+    label: str,
+    value: str,
+    fill=None,
+    val_font=HDR_VALUE_FONT,
+    val_align=None,
+):
+    """
+    Writes a section with small bold label on top and value below it,
+    surrounded by a single outer border box.
+    """
+    if start_col != end_col:
+        sheet.merge_cells(
+            start_row=label_row,
+            start_column=start_col,
+            end_row=label_row,
+            end_column=end_col,
+        )
+    lbl_cell = sheet.cell(row=label_row, column=start_col, value=label)
+    lbl_cell.font = HDR_LABEL_FONT
+    lbl_cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    if content_start_row != content_end_row or start_col != end_col:
+        sheet.merge_cells(
+            start_row=content_start_row,
+            start_column=start_col,
+            end_row=content_end_row,
+            end_column=end_col,
+        )
+    val_cell = sheet.cell(
+        row=content_start_row, column=start_col, value=value or None
+    )
+    val_cell.font = val_font
+    val_cell.alignment = val_align or Alignment(
+        horizontal="left", vertical="top", wrap_text=True
+    )
+
+    draw_box(sheet, label_row, start_col, content_end_row, end_col, fill=fill)
+
+
+def get_column_boundaries(last_col: int) -> dict:
+    if last_col <= 13:
+        # Hardgoods layout (13 columns)
+        s1_start, s1_end = 1, 3
+        s1_sub1_start, s1_sub1_end = 1, 1
+        s1_sub2_start, s1_sub2_end = 2, 3
+
+        s2_start, s2_end = 4, 7
+        s2_sub1_start, s2_sub1_end = 4, 5
+        s2_sub2_start, s2_sub2_end = 6, 7
+
+        s3_start, s3_end = 8, last_col
+        s3_gstin_lbl_start, s3_gstin_lbl_end = 8, 9
+        s3_gstin_val_start, s3_gstin_val_end = 10, last_col
+    else:
+        # Display layout (18 columns)
+        s1_start, s1_end = 1, 5
+        s1_sub1_start, s1_sub1_end = 1, 2
+        s1_sub2_start, s1_sub2_end = 3, 5
+
+        s2_start, s2_end = 6, 11
+        s2_sub1_start, s2_sub1_end = 6, 8
+        s2_sub2_start, s2_sub2_end = 9, 11
+
+        s3_start, s3_end = 12, last_col
+        s3_gstin_lbl_start, s3_gstin_lbl_end = 12, 13
+        s3_gstin_val_start, s3_gstin_val_end = 14, last_col
+
+    return {
+        "s1_start": s1_start,
+        "s1_end": s1_end,
+        "s1_sub1_start": s1_sub1_start,
+        "s1_sub1_end": s1_sub1_end,
+        "s1_sub2_start": s1_sub2_start,
+        "s1_sub2_end": s1_sub2_end,
+        "s2_start": s2_start,
+        "s2_end": s2_end,
+        "s2_sub1_start": s2_sub1_start,
+        "s2_sub1_end": s2_sub1_end,
+        "s2_sub2_start": s2_sub2_start,
+        "s2_sub2_end": s2_sub2_end,
+        "s3_start": s3_start,
+        "s3_end": s3_end,
+        "s3_gstin_lbl_start": s3_gstin_lbl_start,
+        "s3_gstin_lbl_end": s3_gstin_lbl_end,
+        "s3_gstin_val_start": s3_gstin_val_start,
+        "s3_gstin_val_end": s3_gstin_val_end,
+    }
+
+
+def draw_packing_header(
+    sheet, last_col: int, order_title: str = "", cfg: dict = None
+) -> int:
+    cfg = cfg or getattr(settings, "PACKING_LIST_HEADER", DEFAULT_PACKING_LIST_HEADER)
+    highlight = cfg.get("highlight_static", True)
+    y_fill = YELLOW_FILL if highlight else None
+    w_fill = WHITE_FILL
+
+    b = get_column_boundaries(last_col)
+
+    # ── ROW 1 to 5: TOP SECTION ─────────────────────────────────────
+    # Exporter (Row 1..5)
+    exporter_lines = cfg.get("exporter", DEFAULT_PACKING_LIST_HEADER["exporter"])
+    exporter_text = "\n".join(exporter_lines)
+    write_block(
+        sheet,
+        1,
+        2,
+        5,
+        b["s1_start"],
+        b["s1_end"],
+        label="Exporter",
+        value=exporter_text,
+        fill=y_fill,
+    )
+
+    # Invoice No & Date (Row 1..2)
+    write_block(
+        sheet,
+        1,
+        2,
+        2,
+        b["s2_sub1_start"],
+        b["s2_sub1_end"],
+        label="Invoice No & Date",
+        value="",
+        fill=w_fill,
+    )
+    # P.O. No. (Row 3)
+    if b["s2_sub1_start"] != b["s2_sub1_end"]:
+        sheet.merge_cells(
+            start_row=3,
+            start_column=b["s2_sub1_start"],
+            end_row=3,
+            end_column=b["s2_sub1_end"],
+        )
+    po_cell = sheet.cell(row=3, column=b["s2_sub1_start"], value="P.O. No.")
+    po_cell.font = HDR_LABEL_FONT
+    po_cell.alignment = Alignment(horizontal="left", vertical="center")
+    draw_box(sheet, 3, b["s2_sub1_start"], 3, b["s2_sub1_end"], fill=w_fill)
+
+    # Exporter's Ref No (Row 1..3)
+    write_block(
+        sheet,
+        1,
+        2,
+        3,
+        b["s2_sub2_start"],
+        b["s2_sub2_end"],
+        label="Exporter's Ref No",
+        value=cfg.get(
+            "exporter_ref_no", DEFAULT_PACKING_LIST_HEADER["exporter_ref_no"]
+        ),
+        fill=y_fill,
+    )
+
+    # Other Reference (Row 4..5)
+    write_block(
+        sheet,
+        4,
+        5,
+        5,
+        b["s2_start"],
+        b["s2_end"],
+        label="Other Reference",
+        value="",
+        fill=w_fill,
+    )
+
+    # LC No (Row 1..3)
+    write_block(
+        sheet,
+        1,
+        2,
+        3,
+        b["s3_start"],
+        b["s3_end"],
+        label="LC No",
+        value="",
+        fill=w_fill,
+    )
+
+    # GSTIN (Row 4..5)
+    # GSTIN label box
+    sheet.merge_cells(
+        start_row=4,
+        start_column=b["s3_gstin_lbl_start"],
+        end_row=5,
+        end_column=b["s3_gstin_lbl_end"],
+    )
+    gst_lbl = sheet.cell(row=4, column=b["s3_gstin_lbl_start"], value="GSTIN")
+    gst_lbl.font = HDR_LABEL_FONT
+    gst_lbl.alignment = Alignment(horizontal="center", vertical="center")
+    draw_box(sheet, 4, b["s3_gstin_lbl_start"], 5, b["s3_gstin_lbl_end"], fill=y_fill)
+
+    # GSTIN value box
+    sheet.merge_cells(
+        start_row=4,
+        start_column=b["s3_gstin_val_start"],
+        end_row=5,
+        end_column=b["s3_end"],
+    )
+    gst_val = sheet.cell(
+        row=4,
+        column=b["s3_gstin_val_start"],
+        value=cfg.get("gstin", DEFAULT_PACKING_LIST_HEADER["gstin"]),
+    )
+    gst_val.font = HDR_VALUE_BOLD
+    gst_val.alignment = Alignment(horizontal="center", vertical="center")
+    draw_box(sheet, 4, b["s3_gstin_val_start"], 5, b["s3_end"], fill=y_fill)
+
+    for r in range(1, 6):
+        sheet.row_dimensions[r].height = 15
+
+    # ── ROW 6 to 14: MIDDLE SECTION ──────────────────────────────────
+    # Consignee (Row 6..14)
+    consignee_lines = cfg.get("consignee", DEFAULT_PACKING_LIST_HEADER["consignee"])
+    consignee_text = "\n".join(consignee_lines)
+    write_block(
+        sheet,
+        6,
+        7,
+        14,
+        b["s1_start"],
+        b["s1_end"],
+        label="Consignee",
+        value=consignee_text,
+        fill=y_fill,
+    )
+
+    # Other Consignee (Shipp To-) (Row 6..12)
+    write_block(
+        sheet,
+        6,
+        7,
+        12,
+        b["s2_start"],
+        b["s2_end"],
+        label="Other Consignee (Shipp To-)",
+        value="",
+        fill=w_fill,
+    )
+
+    # Country of Origin of Goods (Row 13..14)
+    write_block(
+        sheet,
+        13,
+        14,
+        14,
+        b["s2_start"],
+        b["s2_end"],
+        label="COUNTRY OF ORIGIN OF GOODS",
+        value=cfg.get(
+            "country_of_origin", DEFAULT_PACKING_LIST_HEADER["country_of_origin"]
+        ),
+        fill=y_fill,
+        val_align=Alignment(horizontal="left", vertical="center"),
+    )
+
+    # Statutory details box (Row 6..12, 7 rows in Section 3)
+    stat_items = cfg.get(
+        "statutory_details", DEFAULT_PACKING_LIST_HEADER["statutory_details"]
+    )
+    for idx, (label, val) in enumerate(stat_items):
+        r = 6 + idx
+        # label
+        if b["s3_start"] != b["s3_gstin_lbl_end"]:
+            sheet.merge_cells(
+                start_row=r,
+                start_column=b["s3_start"],
+                end_row=r,
+                end_column=b["s3_gstin_lbl_end"],
+            )
+        sl_cell = sheet.cell(row=r, column=b["s3_start"], value=label)
+        sl_cell.font = HDR_STAT_FONT
+        sl_cell.alignment = Alignment(horizontal="left", vertical="center")
+
+        # value
+        if b["s3_gstin_val_start"] != b["s3_end"]:
+            sheet.merge_cells(
+                start_row=r,
+                start_column=b["s3_gstin_val_start"],
+                end_row=r,
+                end_column=b["s3_end"],
+            )
+        sv_cell = sheet.cell(row=r, column=b["s3_gstin_val_start"], value=val)
+        sv_cell.font = HDR_STAT_FONT
+        sv_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    draw_box(sheet, 6, b["s3_start"], 12, b["s3_end"], fill=y_fill)
+
+    # Country of Final Destination (Row 13..14)
+    write_block(
+        sheet,
+        13,
+        14,
+        14,
+        b["s3_start"],
+        b["s3_end"],
+        label="COUNTRY OF FINAL DESTINATION",
+        value="",
+        fill=w_fill,
+        val_align=Alignment(horizontal="left", vertical="center"),
+    )
+
+    for r in range(6, 15):
+        sheet.row_dimensions[r].height = 14
+
+    # ── ROW 15 to 20: TRANSPORT & TERMS SECTION ──────────────────────
+    # Transport left column 1 & 2
+    # Row 15..16: Pre Carriage By / Place of Receipt
+    write_block(
+        sheet,
+        15,
+        16,
+        16,
+        b["s1_sub1_start"],
+        b["s1_sub1_end"],
+        label="PRE CARRIAGE BY",
+        value=cfg.get(
+            "pre_carriage_by", DEFAULT_PACKING_LIST_HEADER["pre_carriage_by"]
+        ),
+        fill=y_fill,
+        val_align=Alignment(horizontal="left", vertical="center"),
+    )
+    write_block(
+        sheet,
+        15,
+        16,
+        16,
+        b["s1_sub2_start"],
+        b["s1_sub2_end"],
+        label="PLACE OF RECEIPT",
+        value="",
+        fill=w_fill,
+        val_align=Alignment(horizontal="left", vertical="center"),
+    )
+
+    # Row 17..18: Vessel/Flight No / Port of Loading
+    write_block(
+        sheet,
+        17,
+        18,
+        18,
+        b["s1_sub1_start"],
+        b["s1_sub1_end"],
+        label="VESSEL/FLIGHT NO",
+        value="",
+        fill=w_fill,
+        val_align=Alignment(horizontal="left", vertical="center"),
+    )
+    write_block(
+        sheet,
+        17,
+        18,
+        18,
+        b["s1_sub2_start"],
+        b["s1_sub2_end"],
+        label="PORT OF LOADING",
+        value="",
+        fill=w_fill,
+        val_align=Alignment(horizontal="left", vertical="center"),
+    )
+
+    # Row 19..20: Port of Discharge / Final Destination
+    write_block(
+        sheet,
+        19,
+        20,
+        20,
+        b["s1_sub1_start"],
+        b["s1_sub1_end"],
+        label="PORT OF DISCHARGE",
+        value="",
+        fill=w_fill,
+        val_align=Alignment(horizontal="left", vertical="center"),
+    )
+    write_block(
+        sheet,
+        19,
+        20,
+        20,
+        b["s1_sub2_start"],
+        b["s1_sub2_end"],
+        label="FINAL DESTINATION",
+        value="",
+        fill=w_fill,
+        val_align=Alignment(horizontal="left", vertical="center"),
+    )
+
+    # Terms & Marks (Middle + Right, cols s2_start to s3_end)
+    terms_marks = cfg.get(
+        "terms_and_marks", DEFAULT_PACKING_LIST_HEADER["terms_and_marks"]
+    )
+    for idx, (label, val) in enumerate(terms_marks):
+        r = 15 + idx
+        is_static = bool(val)
+        fill = y_fill if is_static else w_fill
+
+        if b["s2_start"] != b["s2_end"]:
+            sheet.merge_cells(
+                start_row=r,
+                start_column=b["s2_start"],
+                end_row=r,
+                end_column=b["s2_end"],
+            )
+        tl_cell = sheet.cell(row=r, column=b["s2_start"], value=label)
+        tl_cell.font = HDR_LABEL_FONT
+        tl_cell.alignment = Alignment(horizontal="left", vertical="center")
+
+        if b["s3_start"] != b["s3_end"]:
+            sheet.merge_cells(
+                start_row=r,
+                start_column=b["s3_start"],
+                end_row=r,
+                end_column=b["s3_end"],
+            )
+        tv_cell = sheet.cell(row=r, column=b["s3_start"], value=val or None)
+        tv_cell.font = HDR_VALUE_FONT
+        tv_cell.alignment = Alignment(horizontal="left", vertical="center")
+
+        if fill:
+            for c in range(b["s2_start"], b["s3_end"] + 1):
+                sheet.cell(row=r, column=c).fill = fill
+
+    # Empty 6th line for padding row 20
+    if b["s2_start"] != b["s2_end"]:
+        sheet.merge_cells(
+            start_row=20,
+            start_column=b["s2_start"],
+            end_row=20,
+            end_column=b["s2_end"],
+        )
+    if b["s3_start"] != b["s3_end"]:
+        sheet.merge_cells(
+            start_row=20,
+            start_column=b["s3_start"],
+            end_row=20,
+            end_column=b["s3_end"],
+        )
+    draw_box(sheet, 15, b["s2_start"], 20, b["s3_end"])
+
+    for r in range(15, 21):
+        sheet.row_dimensions[r].height = 14
+
+    # ── ROW 21: TITLE ROW ────────────────────────────────────────────
+    title_suffix = (order_title or "").strip()
+    if title_suffix:
+        upper_title = title_suffix.upper()
+        if upper_title.startswith("PACKING LIST FOR"):
+            title_text = upper_title
+        elif upper_title.startswith("PACKING LIST"):
+            title_text = upper_title
+        elif upper_title.endswith("ITEMS"):
+            title_text = f"PACKING LIST FOR {upper_title}"
+        else:
+            title_text = f"PACKING LIST FOR {upper_title} ITEMS"
+    else:
+        title_text = "PACKING LIST"
+
+    sheet.merge_cells(start_row=21, start_column=1, end_row=21, end_column=last_col)
+    t_cell = sheet.cell(row=21, column=1, value=title_text)
+    t_cell.font = HDR_TITLE_FONT
+    t_cell.alignment = Alignment(horizontal="left", vertical="center")
+    draw_box(sheet, 21, 1, 21, last_col)
+    sheet.row_dimensions[21].height = 24
+
+    return 22  # row for column headers
+
+
 # ── Document ─────────────────────────────────────────────────────────
 #
 # What the packing list says, with nothing about how it is drawn. The
@@ -496,15 +1056,17 @@ class Document:
     total: Totals
     total_label: str
     layout: Layout = BASE
+    order_title: str = ""
 
 
 def write_document(sheet, doc: Document) -> None:
     set_widths(sheet, doc.layout)
 
-    sheet.cell(row=1, column=1, value=doc.title).font = Font(bold=True, size=15)
-    row = write_facts(sheet, 2, doc.facts)
-
-    header_row = row + 1
+    header_row = draw_packing_header(
+        sheet,
+        len(doc.layout.columns),
+        order_title=doc.order_title or doc.title,
+    )
     write_column_headers(sheet, header_row, doc.layout)
     row = header_row + 1
     first_data_row = row
@@ -524,6 +1086,7 @@ def write_document(sheet, doc: Document) -> None:
 
     write_totals(sheet, row, doc.total, doc.total_label, doc.layout)
     sheet.freeze_panes = sheet.cell(row=first_data_row, column=1)
+
 
 
 def places(number_format: str | None) -> int | None:

@@ -53,6 +53,7 @@ def packing_document(order: Order) -> sheet_kit.Document:
     count = totals.cartons
     return sheet_kit.Document(
         title="PACKING LIST",
+        order_title=order.name,
         facts=[
             ("Order", order.number),
             ("Name", order.name),
