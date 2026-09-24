@@ -684,6 +684,12 @@ def draw_packing_header(
     # Invoice No & Date (Row 1..2)
     inv_num = str(export_details.get("invoice_number") or "").strip()
     inv_date = str(export_details.get("invoice_date") or "").strip()
+    if inv_date and "-" in inv_date:
+        parts = inv_date.split("-")
+        if len(parts) == 3 and len(parts[0]) == 4:
+            day = str(int(parts[2])) if parts[2].isdigit() else parts[2]
+            inv_date = f"{day}-{parts[1]}-{parts[0]}"
+
     if inv_num and inv_date:
         inv_val = f"{inv_num} Date : {inv_date}"
     elif inv_num:
@@ -749,7 +755,24 @@ def draw_packing_header(
     )
 
     # LC No (Row 1..3)
-    lc_val = str(export_details.get("lc_number_date") or "").strip()
+    lc_num = str(export_details.get("lc_number") or "").strip()
+    lc_dt = str(export_details.get("lc_date") or "").strip()
+    if lc_dt and "-" in lc_dt:
+        parts = lc_dt.split("-")
+        if len(parts) == 3 and len(parts[0]) == 4:
+            lc_dt = f"{parts[2]}.{parts[1]}.{parts[0]}"
+
+    if lc_num and lc_dt:
+        prefix = "" if lc_num.upper().startswith("LC NO") else "LC NO. "
+        lc_val = f"{prefix}{lc_num} DATED: {lc_dt}"
+    elif lc_num:
+        prefix = "" if lc_num.upper().startswith("LC NO") else "LC NO. "
+        lc_val = f"{prefix}{lc_num}"
+    elif lc_dt:
+        lc_val = f"DATED: {lc_dt}"
+    else:
+        lc_val = str(export_details.get("lc_number_date") or "").strip()
+
     write_block(
         sheet,
         1,
