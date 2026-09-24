@@ -458,6 +458,11 @@ class DisplayOrder(TimeStampedModel):
         choices=DisplayOrderStatus.choices,
         default=DisplayOrderStatus.DRAFT,
     )
+    export_details = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Customs/export header details (Invoice No, PO, Ports, Vessel, etc.)",
+    )
 
     class Meta:
         ordering = ["-created_at"]

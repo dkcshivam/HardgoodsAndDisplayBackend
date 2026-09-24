@@ -487,13 +487,12 @@ HDR_STAT_FONT = Font(name="Calibri", size=8.5, bold=True, color="000000")
 HDR_TITLE_FONT = Font(name="Calibri", size=11, bold=True, italic=True, color="000000")
 
 DEFAULT_PACKING_LIST_HEADER = {
-    "highlight_static": True,
+    "highlight_static": False,
     "exporter": [
         "DKC EXPORTS PVT. LTD.",
         "A-4, SHIV MARG,GREEN AVN. , CHURCH ROAD",
         "VASANT KUNJ , NEW DELHI 110070",
         "INDIA",
-        "",
         "Tel- + 9111 26124358",
     ],
     "exporter_ref_no": "IEC No 0506081460",
@@ -652,12 +651,17 @@ def get_column_boundaries(last_col: int) -> dict:
 
 
 def draw_packing_header(
-    sheet, last_col: int, order_title: str = "", cfg: dict = None
+    sheet,
+    last_col: int,
+    order_title: str = "",
+    cfg: dict = None,
+    export_details: dict = None,
 ) -> int:
     cfg = cfg or getattr(settings, "PACKING_LIST_HEADER", DEFAULT_PACKING_LIST_HEADER)
-    highlight = cfg.get("highlight_static", True)
+    highlight = cfg.get("highlight_static", False)
     y_fill = YELLOW_FILL if highlight else None
-    w_fill = WHITE_FILL
+    w_fill = WHITE_FILL if highlight else None
+    export_details = export_details or {}
 
     b = get_column_boundaries(last_col)
 
@@ -678,6 +682,17 @@ def draw_packing_header(
     )
 
     # Invoice No & Date (Row 1..2)
+    inv_num = str(export_details.get("invoice_number") or "").strip()
+    inv_date = str(export_details.get("invoice_date") or "").strip()
+    if inv_num and inv_date:
+        inv_val = f"{inv_num} Date : {inv_date}"
+    elif inv_num:
+        inv_val = inv_num
+    elif inv_date:
+        inv_val = f"Date : {inv_date}"
+    else:
+        inv_val = ""
+
     write_block(
         sheet,
         1,
@@ -686,7 +701,7 @@ def draw_packing_header(
         b["s2_sub1_start"],
         b["s2_sub1_end"],
         label="Invoice No & Date",
-        value="",
+        value=inv_val,
         fill=w_fill,
     )
     # P.O. No. (Row 3)
@@ -697,7 +712,9 @@ def draw_packing_header(
             end_row=3,
             end_column=b["s2_sub1_end"],
         )
-    po_cell = sheet.cell(row=3, column=b["s2_sub1_start"], value="P.O. No.")
+    po_num = str(export_details.get("po_number") or "").strip()
+    po_text = f"P.O. No. {po_num}" if po_num else "P.O. No."
+    po_cell = sheet.cell(row=3, column=b["s2_sub1_start"], value=po_text)
     po_cell.font = HDR_LABEL_FONT
     po_cell.alignment = Alignment(horizontal="left", vertical="center")
     draw_box(sheet, 3, b["s2_sub1_start"], 3, b["s2_sub1_end"], fill=w_fill)
@@ -718,6 +735,7 @@ def draw_packing_header(
     )
 
     # Other Reference (Row 4..5)
+    other_ref = str(export_details.get("other_reference") or "").strip()
     write_block(
         sheet,
         4,
@@ -726,11 +744,12 @@ def draw_packing_header(
         b["s2_start"],
         b["s2_end"],
         label="Other Reference",
-        value="",
+        value=other_ref,
         fill=w_fill,
     )
 
     # LC No (Row 1..3)
+    lc_val = str(export_details.get("lc_number_date") or "").strip()
     write_block(
         sheet,
         1,
@@ -739,12 +758,11 @@ def draw_packing_header(
         b["s3_start"],
         b["s3_end"],
         label="LC No",
-        value="",
+        value=lc_val,
         fill=w_fill,
     )
 
     # GSTIN (Row 4..5)
-    # GSTIN label box
     sheet.merge_cells(
         start_row=4,
         start_column=b["s3_gstin_lbl_start"],
@@ -756,7 +774,6 @@ def draw_packing_header(
     gst_lbl.alignment = Alignment(horizontal="center", vertical="center")
     draw_box(sheet, 4, b["s3_gstin_lbl_start"], 5, b["s3_gstin_lbl_end"], fill=y_fill)
 
-    # GSTIN value box
     sheet.merge_cells(
         start_row=4,
         start_column=b["s3_gstin_val_start"],
@@ -792,6 +809,7 @@ def draw_packing_header(
     )
 
     # Other Consignee (Shipp To-) (Row 6..12)
+    other_consignee = str(export_details.get("other_consignee") or "").strip()
     write_block(
         sheet,
         6,
@@ -800,7 +818,7 @@ def draw_packing_header(
         b["s2_start"],
         b["s2_end"],
         label="Other Consignee (Shipp To-)",
-        value="",
+        value=other_consignee,
         fill=w_fill,
     )
 
@@ -826,7 +844,6 @@ def draw_packing_header(
     )
     for idx, (label, val) in enumerate(stat_items):
         r = 6 + idx
-        # label
         if b["s3_start"] != b["s3_gstin_lbl_end"]:
             sheet.merge_cells(
                 start_row=r,
@@ -838,7 +855,6 @@ def draw_packing_header(
         sl_cell.font = HDR_STAT_FONT
         sl_cell.alignment = Alignment(horizontal="left", vertical="center")
 
-        # value
         if b["s3_gstin_val_start"] != b["s3_end"]:
             sheet.merge_cells(
                 start_row=r,
@@ -853,6 +869,7 @@ def draw_packing_header(
     draw_box(sheet, 6, b["s3_start"], 12, b["s3_end"], fill=y_fill)
 
     # Country of Final Destination (Row 13..14)
+    country_dest = str(export_details.get("final_destination_country") or "").strip()
     write_block(
         sheet,
         13,
@@ -861,7 +878,7 @@ def draw_packing_header(
         b["s3_start"],
         b["s3_end"],
         label="COUNTRY OF FINAL DESTINATION",
-        value="",
+        value=country_dest,
         fill=w_fill,
         val_align=Alignment(horizontal="left", vertical="center"),
     )
@@ -886,6 +903,7 @@ def draw_packing_header(
         fill=y_fill,
         val_align=Alignment(horizontal="left", vertical="center"),
     )
+    place_receipt = str(export_details.get("place_of_receipt") or "").strip()
     write_block(
         sheet,
         15,
@@ -894,12 +912,13 @@ def draw_packing_header(
         b["s1_sub2_start"],
         b["s1_sub2_end"],
         label="PLACE OF RECEIPT",
-        value="",
+        value=place_receipt,
         fill=w_fill,
         val_align=Alignment(horizontal="left", vertical="center"),
     )
 
     # Row 17..18: Vessel/Flight No / Port of Loading
+    vessel = str(export_details.get("vessel_flight_no") or "").strip()
     write_block(
         sheet,
         17,
@@ -908,10 +927,11 @@ def draw_packing_header(
         b["s1_sub1_start"],
         b["s1_sub1_end"],
         label="VESSEL/FLIGHT NO",
-        value="",
+        value=vessel,
         fill=w_fill,
         val_align=Alignment(horizontal="left", vertical="center"),
     )
+    port_loading = str(export_details.get("port_of_loading") or "").strip()
     write_block(
         sheet,
         17,
@@ -920,12 +940,13 @@ def draw_packing_header(
         b["s1_sub2_start"],
         b["s1_sub2_end"],
         label="PORT OF LOADING",
-        value="",
+        value=port_loading,
         fill=w_fill,
         val_align=Alignment(horizontal="left", vertical="center"),
     )
 
     # Row 19..20: Port of Discharge / Final Destination
+    port_discharge = str(export_details.get("port_of_discharge") or "").strip()
     write_block(
         sheet,
         19,
@@ -934,10 +955,11 @@ def draw_packing_header(
         b["s1_sub1_start"],
         b["s1_sub1_end"],
         label="PORT OF DISCHARGE",
-        value="",
+        value=port_discharge,
         fill=w_fill,
         val_align=Alignment(horizontal="left", vertical="center"),
     )
+    final_dest = str(export_details.get("final_destination") or "").strip()
     write_block(
         sheet,
         19,
@@ -946,7 +968,7 @@ def draw_packing_header(
         b["s1_sub2_start"],
         b["s1_sub2_end"],
         label="FINAL DESTINATION",
-        value="",
+        value=final_dest,
         fill=w_fill,
         val_align=Alignment(horizontal="left", vertical="center"),
     )
@@ -955,8 +977,17 @@ def draw_packing_header(
     terms_marks = cfg.get(
         "terms_and_marks", DEFAULT_PACKING_LIST_HEADER["terms_and_marks"]
     )
+    shipping_line = str(export_details.get("shipping_line") or "").strip()
+    container_no = str(export_details.get("container_no") or "").strip()
+
     for idx, (label, val) in enumerate(terms_marks):
         r = 15 + idx
+        display_val = val
+        if label == "SHIPPING LINE" and shipping_line:
+            display_val = shipping_line
+        elif label == "CONTAINER NO" and container_no:
+            display_val = container_no
+
         is_static = bool(val)
         fill = y_fill if is_static else w_fill
 
@@ -978,7 +1009,7 @@ def draw_packing_header(
                 end_row=r,
                 end_column=b["s3_end"],
             )
-        tv_cell = sheet.cell(row=r, column=b["s3_start"], value=val or None)
+        tv_cell = sheet.cell(row=r, column=b["s3_start"], value=display_val or None)
         tv_cell.font = HDR_VALUE_FONT
         tv_cell.alignment = Alignment(horizontal="left", vertical="center")
 
@@ -1057,6 +1088,7 @@ class Document:
     total_label: str
     layout: Layout = BASE
     order_title: str = ""
+    export_details: dict = field(default_factory=dict)
 
 
 def write_document(sheet, doc: Document) -> None:
@@ -1066,10 +1098,10 @@ def write_document(sheet, doc: Document) -> None:
         sheet,
         len(doc.layout.columns),
         order_title=doc.order_title or doc.title,
+        export_details=doc.export_details,
     )
     write_column_headers(sheet, header_row, doc.layout)
     row = header_row + 1
-    first_data_row = row
 
     for block in doc.blocks:
         if block.banner:
@@ -1085,7 +1117,8 @@ def write_document(sheet, doc: Document) -> None:
             row += 2
 
     write_totals(sheet, row, doc.total, doc.total_label, doc.layout)
-    sheet.freeze_panes = sheet.cell(row=first_data_row, column=1)
+    # Note: freeze_panes intentionally omitted so header rows move with the rest of the sheet
+
 
 
 

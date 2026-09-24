@@ -426,6 +426,7 @@ class DisplayOrderSerializer(serializers.ModelSerializer):
             "lines",
             "rates",
             "carton_count",
+            "export_details",
             "created_at",
         ]
         read_only_fields = ["number", "status"]

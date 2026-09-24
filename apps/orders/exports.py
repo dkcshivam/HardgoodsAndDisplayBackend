@@ -65,6 +65,7 @@ def packing_document(order: Order) -> sheet_kit.Document:
         blocks=[sheet_kit.Block(rows=rows)],
         total=totals,
         total_label=f"TOTAL · all {count} box{'es' if count != 1 else ''}",
+        export_details=order.export_details or {},
     )
 
 

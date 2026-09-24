@@ -51,6 +51,11 @@ class Order(TimeStampedModel):
     status = models.CharField(
         max_length=10, choices=OrderStatus.choices, default=OrderStatus.DRAFT
     )
+    export_details = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Customs/export header details (Invoice No, PO, Ports, Vessel, etc.)",
+    )
 
     class Meta:
         ordering = ["-created_at"]

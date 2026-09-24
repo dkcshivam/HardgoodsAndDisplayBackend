@@ -158,6 +158,7 @@ def packing_document(order: DisplayOrder) -> sheet_kit.Document:
         total=order_totals,
         total_label=f"ORDER TOTAL · all {_boxes(order_totals.cartons)}",
         layout=LAYOUT,
+        export_details=order.export_details or {},
     )
 
 

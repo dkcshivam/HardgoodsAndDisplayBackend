@@ -164,22 +164,21 @@ CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 # ── Export documents (Packing List & Invoice) ─────────────────────────
 
 PACKING_LIST_HEADER = {
-    # If True, highlights static fields with yellow fill matching the export specification.
+    # If True, highlights static fields with yellow fill.
     # Set to False for clean white production print.
-    "highlight_static": True,
-    # Exporter details (yellow / static)
+    "highlight_static": False,
+    # Exporter details (static)
     "exporter": [
         "DKC EXPORTS PVT. LTD.",
         "A-4, SHIV MARG,GREEN AVN. , CHURCH ROAD",
         "VASANT KUNJ , NEW DELHI 110070",
         "INDIA",
-        "",
         "Tel- + 9111 26124358",
     ],
-    # Exporter registration numbers (yellow / static)
+    # Exporter registration numbers (static)
     "exporter_ref_no": "IEC No 0506081460",
     "gstin": "07AACCD0416A1ZJ",
-    # Consignee details (yellow / static)
+    # Consignee details (static)
     "consignee": [
         "URBAN OUTFITTERS INC",
         "5000 SOUTH BROAD STREET",
@@ -190,7 +189,7 @@ PACKING_LIST_HEADER = {
         "PH:-(215) 454-5500",
         "FAX:-(215) 454-4660",
     ],
-    # Regulatory, tax and origin codes (yellow / static)
+    # Regulatory, tax and origin codes (static)
     "statutory_details": [
         ("State of Origin Code", "07"),
         ("District of Origin Code", "84"),
@@ -200,10 +199,10 @@ PACKING_LIST_HEADER = {
         ("STATEMENT TYPE = DEC", "0"),
         ("STATEMENT CODE = RD001", "0"),
     ],
-    # Origin and transport defaults (yellow / static)
+    # Origin and transport defaults (static)
     "country_of_origin": "INDIA",
     "pre_carriage_by": "ROAD",
-    # Terms of delivery, payment and shipping marks (yellow / static)
+    # Terms of delivery, payment and shipping marks (static)
     "terms_and_marks": [
         ("TERM OF DELIVERY OF PAYMENT", "FOB"),
         ("PAYMENT BY", "LC"),
@@ -212,4 +211,5 @@ PACKING_LIST_HEADER = {
         ("CONTAINER NO", ""),
     ],
 }
+
 
