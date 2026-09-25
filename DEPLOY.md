@@ -28,7 +28,7 @@ POSTGRES_PASSWORD=        # a long random password
 
 # Optional
 DJANGO_SECURE_COOKIES=True    # once the admin is reached over https
-DJANGO_LOG_LEVEL=INFO
+DJANGO_LOG_LEVEL=INFO         # default ERROR; INFO also logs every 4xx
 BACKEND_PORT=8000
 ```
 
@@ -101,6 +101,20 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 In each repo, backend first. Migrations run when the backend starts.
+
+## Building here, running elsewhere
+
+`--build` builds the images on whatever machine runs them. They are named
+`dkc-packing-backend:prod` and `dkc-packing-frontend:prod`, so a build made
+here can be carried to a server instead:
+
+```bash
+docker save dkc-packing-backend:prod dkc-packing-frontend:prod | gzip > dkc-packing-prod.tar.gz
+
+# On the server, beside both repos' compose files and the backend .env
+gunzip -c dkc-packing-prod.tar.gz | docker load
+docker compose -f docker-compose.prod.yml up -d    # no --build: uses the loaded images
+```
 
 ## Backups
 

@@ -170,7 +170,8 @@ REST_FRAMEWORK = {
 
 # Django prints request errors to the console only while DEBUG is on. With it
 # off they would go to admin email, which is not set up, so a 500 in
-# production would leave no trace in `docker logs`.
+# production would leave no trace in `docker logs`. Errors only by default:
+# gunicorn's access log already records every request and its status.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -178,7 +179,7 @@ LOGGING = {
     "loggers": {
         "django": {
             "handlers": ["console"],
-            "level": env("DJANGO_LOG_LEVEL", "INFO"),
+            "level": env("DJANGO_LOG_LEVEL", "ERROR"),
             "propagate": False,
         },
     },
