@@ -1,5 +1,11 @@
+import shutil
+import tempfile
+from io import StringIO
+from pathlib import Path
+
+from django.core.management import CommandError, call_command
 from django.db import IntegrityError, transaction
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APITestCase
 
 from .models import Store
@@ -60,3 +66,52 @@ class StoreApiTests(APITestCase):
             [row["name"] for row in results],
             ["118 Portland Pearl", "204 Austin Domain"],
         )
+
+
+def local_storage(folder) -> dict:
+    return {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+            "OPTIONS": {"location": str(folder)},
+        },
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+
+
+class CopyMediaToStorageTests(TestCase):
+    """The one-time move of images off disk, with a folder standing in for S3."""
+
+    def setUp(self):
+        self.source = Path(tempfile.mkdtemp())
+        self.target = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.source)
+        self.addCleanup(shutil.rmtree, self.target)
+        photo = self.source / "display" / "products" / "57" / "pendant.png"
+        photo.parent.mkdir(parents=True)
+        photo.write_bytes(b"png")
+
+    def copy(self, into):
+        out = StringIO()
+        with override_settings(STORAGES=local_storage(into)):
+            call_command("copy_media_to_storage", source=str(self.source), stdout=out)
+        return out.getvalue()
+
+    def test_every_file_keeps_the_path_the_database_knows_it_by(self):
+        self.copy(self.target)
+        copied = self.target / "display" / "products" / "57" / "pendant.png"
+        self.assertEqual(copied.read_bytes(), b"png")
+
+    def test_a_second_run_copies_nothing_twice(self):
+        self.copy(self.target)
+        self.assertIn("Copied 0, already there 1.", self.copy(self.target))
+
+    def test_it_refuses_to_copy_a_folder_onto_itself(self):
+        with self.assertRaisesMessage(CommandError, "AWS_STORAGE_BUCKET_NAME"):
+            self.copy(self.source)
+
+
+class BackupDatabaseTests(TestCase):
+    @override_settings(AWS_BACKUP_BUCKET_NAME="")
+    def test_it_needs_the_private_bucket_named(self):
+        with self.assertRaisesMessage(CommandError, "AWS_BACKUP_BUCKET_NAME"):
+            call_command("backup_database")
