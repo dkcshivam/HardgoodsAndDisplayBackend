@@ -33,5 +33,7 @@ RUN DJANGO_SECRET_KEY=build-only python manage.py collectstatic --noinput \
 USER app
 EXPOSE 8000
 # Threads, because images are served from here too and a worker would
-# otherwise sit on each download.
-CMD ["sh", "-c", "python manage.py migrate --noinput && exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 4 --timeout 120 --access-logfile -"]
+# otherwise sit on each download. The frontend's proxy reuses connections,
+# and gunicorn's default 2 s keep-alive closed them under it often enough to
+# surface as a 500 now and then; 75 s is nginx's default.
+CMD ["sh", "-c", "python manage.py migrate --noinput && exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 4 --timeout 120 --keep-alive 75 --access-logfile -"]
