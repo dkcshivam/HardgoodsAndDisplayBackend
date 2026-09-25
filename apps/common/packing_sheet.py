@@ -505,6 +505,8 @@ class Document:
     layout: Layout = BASE
     order_title: str = ""
     export_details: dict = field(default_factory=dict)
+    # Other Consignee when the export details name none.
+    ship_to: list = field(default_factory=list)
 
 
 def packing_title(name: str) -> str:
@@ -525,6 +527,7 @@ def write_document(sheet, doc: Document) -> None:
         reference="Exporter's Ref No",
         title=packing_title(doc.order_title or doc.title),
         export_details=doc.export_details,
+        ship_to=doc.ship_to,
     )
     write_column_headers(sheet, header_row, doc.layout)
     row = header_row + 1

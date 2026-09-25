@@ -808,6 +808,38 @@ class DisplayPackingListTests(APITestCase):
 
         self.assertEqual(under(sheet, "Exporter's Ref No"), "IEC No 0999999999")
 
+    def test_the_invoice_opens_with_the_packing_lists_heading(self):
+        """The desk reads the two side by side; only the IEC's caption differs."""
+        self.order.export_details = {
+            "invoice_number": "DKCP-ABC",
+            "invoice_date": "2026-07-01",
+            "lc_number": "UPL000358085",
+            "lc_date": "2021-04-02",
+            "other_consignee": "L&J Transportation\nATTN: Stephanie Witmyer",
+            "port_of_loading": "ICD DADRI",
+        }
+        self.order.save()
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        invoice, packing = self.sheet("invoice"), self.sheet()
+
+        self.assertEqual(invoice["A1"].value, "COMMERCIAL INVOICE")
+        iec = f"IEC No {settings.EXPORT_DOCUMENT_HEADER['iec_code']}"
+        self.assertEqual(under(invoice, "IEC CODE"), iec)
+        self.assertEqual(under(packing, "Exporter's Ref No"), iec)
+        self.assertEqual(under(invoice, "Invoice No & Date"), "DKCP-ABC Date : 1-07-2026")
+        self.assertEqual(under(invoice, "LC No"), "LC NO. UPL000358085 DATED: 02.04.2021")
+        for caption in (
+            "Exporter", "Invoice No & Date", "LC No", "Consignee",
+            "Other Consignee (Shipp To-)", "PORT OF LOADING",
+        ):
+            self.assertEqual(under(invoice, caption), under(packing, caption), caption)
+
+    def test_the_invoice_heads_its_table_with_the_order(self):
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        values = {cell.value for row in self.sheet("invoice").iter_rows() for cell in row}
+
+        self.assertIn("INVOICE FOR SPLIT", values)
+
     def test_the_invoice_prints_the_hts_code_not_the_hsn(self):
         """The buyer's customs clear on the US tariff code, not India's HSN."""
         DisplayProduct.objects.filter(pk=self.bow.pk).update(

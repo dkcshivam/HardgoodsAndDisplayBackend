@@ -12,6 +12,15 @@ from apps.masters.models import Merchant
 from .models import Order, OrderLine
 
 
+def under(sheet, caption):
+    """What a heading box holds: the cell beneath its caption."""
+    for row in sheet.iter_rows():
+        for cell in row:
+            if cell.value == caption:
+                return sheet.cell(row=cell.row + 1, column=cell.column).value
+    raise AssertionError(f"no {caption!r} on the sheet")
+
+
 class OrderFixture(APITestCase):
     """One order: six chairs two-to-a-box, and two tables of two parts each."""
 
@@ -381,3 +390,37 @@ class InvoiceCodeTests(OrderFixture):
 
         codes = {line[1]: line[2] for line in response.data["lines"]}
         self.assertEqual(codes, {"CHR-01": "9401.61.6011", "TBL-01": "9403.60.8081"})
+
+
+class ExportHeadingTests(OrderFixture):
+    """Hardgoods has no form for export details, so the order's address stands in."""
+
+    def sheet(self, name):
+        response = self.client.get(self.url(name))
+        self.assertEqual(response.status_code, 200)
+        return load_workbook(BytesIO(b"".join(response.streaming_content))).active
+
+    def test_the_ship_to_address_fills_other_consignee(self):
+        Order.objects.filter(pk=self.order.pk).update(
+            ship_line1="190 Yarnell Road", ship_city="Pottstown",
+            ship_state="PA", ship_postal_code="19465",
+        )
+        self.client.post(self.url("auto-pack"))
+
+        for name in ("invoice", "packing-list"):
+            self.assertEqual(
+                under(self.sheet(name), "Other Consignee (Shipp To-)"),
+                "190 Yarnell Road\nPottstown, PA 19465\nUS",
+            )
+
+    def test_an_other_consignee_typed_for_the_shipment_wins(self):
+        Order.objects.filter(pk=self.order.pk).update(
+            ship_line1="190 Yarnell Road",
+            export_details={"other_consignee": "L&J Transportation"},
+        )
+        self.client.post(self.url("auto-pack"))
+
+        self.assertEqual(
+            under(self.sheet("invoice"), "Other Consignee (Shipp To-)"),
+            "L&J Transportation",
+        )

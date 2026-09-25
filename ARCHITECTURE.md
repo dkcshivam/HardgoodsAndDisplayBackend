@@ -436,9 +436,8 @@ known problems cannot reach the database whatever the client does.
 
 ### Packing list
 
-`GET /orders/{id}/packing-list/` renders the stored plan as an Excel sheet: a
-heading block naming the order, merchant, buyer and ship-to address, then one row
-per **distinct thing packed** —
+`GET /orders/{id}/packing-list/` renders the stored plan as an Excel sheet: the
+export heading (below), then one row per **distinct thing packed** —
 
 ```
 Carton Nos · Cartons · Style No · Customs Description ·
@@ -517,10 +516,28 @@ lives on the product: editing the catalogue would rewrite invoices already
 sent. An unpriced style prints its quantity and weight with the two money
 columns blank, and the total is omitted rather than understated.
 
-The heading block is **drawn and labelled but left empty** — invoice number,
-ports, vessel, container, LC and shipping mark change per shipment and the app
-holds none of them. Our own letterhead, the consignee and India as the country
-of origin do print.
+Under a COMMERCIAL INVOICE title it opens with the same heading as the packing
+list.
+
+### Export heading
+
+Both documents open with the heading block of the desk's own invoice and packing
+list, drawn by `apps/common/export_header.py` on whatever columns the document
+has:
+
+- **What never changes** — our letterhead, IEC, GSTIN, the consignee, the
+  statutory codes, the terms of delivery and payment and the shipping mark — is
+  `EXPORT_DOCUMENT_HEADER` in `config/settings.py`.
+- **What changes per shipment** — invoice number and date, P.O., LC number and
+  date, other reference, other consignee, ports, vessel, final destination,
+  shipping line and container — is the order's `export_details`, filled in on
+  the Display packing screen. A blank field leaves its box empty. Hardgoods has
+  no such form, so its ship-to address stands in for the other consignee.
+
+The two headings differ where the desk's own do. The invoice captions the IEC
+box `IEC CODE` where the packing list says `Exporter's Ref No`, and the line
+over the table reads `INVOICE FOR <order>` against `PACKING LIST FOR <order>
+ITEMS`. The print pages do not draw this heading yet.
 
 ### One document, two renderings
 

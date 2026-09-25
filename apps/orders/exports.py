@@ -20,16 +20,6 @@ from . import services
 from .models import Order
 
 
-#: Our own letterhead — constant, so it lives here rather than in a settings
-#: table nobody would ever edit.
-EXPORTER = [
-    "DKC EXPORTS PVT LTD",
-    "A-4 Shiv Marg, Green Avenue, Church Road",
-    "Vasant Kunj, New Delhi 110070, INDIA",
-    "Tel +91 11 26124358",
-]
-
-
 def invoice_filename(order: Order) -> str:
     return f"invoice-{order.number}.xlsx"
 
@@ -66,6 +56,7 @@ def packing_document(order: Order) -> sheet_kit.Document:
         total=totals,
         total_label=f"TOTAL · all {count} box{'es' if count != 1 else ''}",
         export_details=order.export_details or {},
+        ship_to=_ship_to(order),
     )
 
 
@@ -92,6 +83,19 @@ def _address(order: Order) -> str:
         order.ship_country,
     ]
     return ", ".join(part for part in parts if part)
+
+
+def _ship_to(order: Order) -> list[str]:
+    """
+    The order's own address, for the heading's Other Consignee when the
+    export details name nobody. A country alone is no address to ship to.
+    """
+    if not order.ship_line1:
+        return []
+    town = " ".join(part for part in (order.ship_state, order.ship_postal_code) if part)
+    town = ", ".join(part for part in (order.ship_city, town) if part)
+    lines = (order.ship_line1, order.ship_line2, town, order.ship_country)
+    return [line for line in lines if line]
 
 
 def invoice_document(order: Order) -> invoice_kit.Document:
@@ -122,10 +126,10 @@ def invoice_document(order: Order) -> invoice_kit.Document:
         )
 
     return invoice_kit.Document(
-        exporter=EXPORTER,
-        consignee=[order.buyer_name or order.merchant.name],
-        ship_to=[part for part in _address(order).split(", ") if part],
         invoice=invoice,
+        order_title=order.name,
+        export_details=order.export_details or {},
+        ship_to=_ship_to(order),
     )
 
 

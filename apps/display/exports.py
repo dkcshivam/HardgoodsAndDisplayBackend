@@ -60,16 +60,6 @@ LAYOUT = sheet_kit.Layout(
 )
 
 
-#: Our own letterhead — constant, so it lives here rather than in a settings
-#: table nobody would ever edit.
-EXPORTER = [
-    "DKC EXPORTS PVT LTD",
-    "A-4 Shiv Marg, Green Avenue, Church Road",
-    "Vasant Kunj, New Delhi 110070, INDIA",
-    "Tel +91 11 26124358",
-]
-
-
 def invoice_filename(order: DisplayOrder) -> str:
     return f"invoice-{order.number}.xlsx"
 
@@ -233,12 +223,10 @@ def invoice_document(order: DisplayOrder) -> invoice_kit.Document:
             rate=rates.get(product_id),
         )
 
-    stores = len({line.store_id for line in order.lines.all()})
     return invoice_kit.Document(
-        exporter=EXPORTER,
-        consignee=[order.buyer_name or order.merchant.name],
-        ship_to=[f"{stores} stores"],
         invoice=invoice,
+        order_title=order.name,
+        export_details=order.export_details or {},
     )
 
 

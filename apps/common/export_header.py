@@ -59,6 +59,7 @@ def draw(
     reference: str,
     title: str,
     export_details: dict,
+    ship_to: list[str] = (),
 ) -> int:
     """
     Draw the heading from row `top` down and hand back the first free row.
@@ -109,7 +110,7 @@ def draw(
     block(sheet, row, row + 8, left, "Consignee", consignee, static)
     block(
         sheet, row, row + 6, middle, "Other Consignee (Shipp To-)",
-        detail("other_consignee"), entered,
+        "\n".join(other_consignee(export_details, ship_to)), entered,
     )
     block(
         sheet, row + 7, row + 8, middle, "COUNTRY OF ORIGIN OF GOODS",
@@ -185,6 +186,12 @@ def draw(
     sheet.row_dimensions[row].height = 24
 
     return row + 1
+
+
+def other_consignee(export_details: dict, ship_to=()) -> list[str]:
+    """Who the goods go to, as typed for this shipment, else `ship_to`."""
+    typed = str((export_details or {}).get("other_consignee") or "").strip()
+    return typed.splitlines() if typed else list(ship_to)
 
 
 def merge(sheet, first_row: int, first_column: int, last_row: int, last_column: int) -> None:

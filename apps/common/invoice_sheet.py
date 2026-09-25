@@ -6,17 +6,20 @@ a thing is in, this says what it is worth. The two are read side by side and
 their quantities must agree, so both count what is **packed**, never what was
 ordered.
 
-The heading block is drawn but left empty. Invoice number, ports, vessel,
-container and LC change per shipment and the app holds none of them; ruling
-the boxes and labelling them is the useful half, and the desk fills the rest.
+Under its COMMERCIAL INVOICE title it opens with the packing list's own
+heading (`export_header`), so the pair read alike. The one box they caption
+differently holds the IEC: "IEC CODE" here, "Exporter's Ref No" there.
 """
 
 from dataclasses import dataclass, field
 from decimal import Decimal
 from io import BytesIO
 
+from django.conf import settings
 from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.utils import get_column_letter
+
+from apps.common import export_header
 
 MONEY = Decimal("0.01")
 WEIGHT = Decimal("0.001")
@@ -25,7 +28,6 @@ ZERO = Decimal("0")
 RULE = Side(style="thin", color="000000")
 BOX = Border(left=RULE, right=RULE, top=RULE, bottom=RULE)
 TITLE = Font(bold=True, size=14)
-LABEL = Font(bold=True, size=8)
 VALUE = Font(size=10)
 HEAD = Font(bold=True, size=9)
 
@@ -43,6 +45,12 @@ COLUMNS = [
 
 SERIAL, STYLE, HTS, DESCRIPTION, QTY, NET, RATE, AMOUNT = range(8)
 
+TITLE_TEXT = "COMMERCIAL INVOICE"
+
+# The middle band is the description column alone, too narrow to split, so
+# the IEC box stacks above the LC box — as on the desk's own invoice.
+GRID = export_header.Grid(left=3, split=2, middle=4, beside=None, labels=6, last=8)
+
 ORIGIN_LINE = "COUNTRY OF ORIGIN OF GOODS — INDIA"
 IGST_NOTE = "Note: IGST is paid under the refund mechanism; no charge to the buyer."
 SIGNATORY = "Authorised Signatory"
@@ -52,7 +60,7 @@ DECLARATION = [
 ]
 
 
-#: Left blank for the desk. Each is one labelled cell with room under it.
+#: The print page still rules these as blank boxes for the desk to fill.
 SHIPMENT_FIELDS = [
     ("Invoice No & Date", "P.O. No.", "L/C No"),
     ("Other Reference", "Buyer's Order No", "Country of Final Destination"),
@@ -146,70 +154,20 @@ def set_widths(sheet) -> None:
         sheet.column_dimensions[get_column_letter(index)].width = width
 
 
-def _span(sheet, row: int, first: int, last: int, label: str, value: str = "") -> None:
-    """A labelled box: the caption small above, the value under it."""
-    sheet.merge_cells(start_row=row, start_column=first, end_row=row, end_column=last)
-    sheet.merge_cells(
-        start_row=row + 1, start_column=first, end_row=row + 1, end_column=last
-    )
-
-    caption = sheet.cell(row=row, column=first, value=label)
-    caption.font = LABEL
-    caption.alignment = Alignment(horizontal="left", vertical="center")
-
-    entry = sheet.cell(row=row + 1, column=first, value=value or None)
-    entry.font = VALUE
-    entry.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-
-    for line in (row, row + 1):
-        for column in range(first, last + 1):
-            sheet.cell(row=line, column=column).border = BOX
-
-
-def write_heading(sheet, exporter: list[str], consignee: list[str], ship_to: list[str]) -> int:
-    """
-    The letterhead. Parties are known; everything about the shipment is not,
-    so those boxes are ruled and labelled and left for the desk to fill.
-    """
+def write_title(sheet) -> None:
     last = len(COLUMNS)
-
     sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last)
-    title = sheet.cell(row=1, column=1, value="COMMERCIAL INVOICE")
+    title = sheet.cell(row=1, column=1, value=TITLE_TEXT)
     title.font = TITLE
     title.alignment = Alignment(horizontal="center", vertical="center")
+    export_header.box(sheet, 1, 1, 1, last)
     sheet.row_dimensions[1].height = 24
 
-    row = 2
-    third = max(3, last // 3)
-    _span(sheet, row, 1, third, "Exporter", "\n".join(exporter))
-    _span(sheet, row, third + 1, last, "Consignee", "\n".join(consignee))
-    sheet.row_dimensions[row + 1].height = 62
-    row += 2
 
-    _span(sheet, row, 1, third, "Other Consignee (Ship To)", "\n".join(ship_to))
-    _span(sheet, row, third + 1, last, "Country of Origin of Goods", "INDIA")
-    sheet.row_dimensions[row + 1].height = 48
-    row += 2
-
-    for group in SHIPMENT_FIELDS:
-        edges = _thirds(last, len(group))
-        for label, (first, stop) in zip(group, edges):
-            _span(sheet, row, first, stop, label)
-        row += 2
-
-    return row
-
-
-def _thirds(last: int, parts: int) -> list[tuple[int, int]]:
-    """Column spans that divide the sheet's width evenly, to the last column."""
-    width = last // parts
-    edges = []
-    start = 1
-    for index in range(parts):
-        stop = last if index == parts - 1 else start + width - 1
-        edges.append((start, stop))
-        start = stop + 1
-    return edges
+def invoice_title(name: str) -> str:
+    """`INVOICE FOR <ORDER>`, the line the desk heads its item table with."""
+    name = (name or "").strip().upper()
+    return f"INVOICE FOR {name}" if name else "INVOICE"
 
 
 def write_column_headers(sheet, row: int) -> None:
@@ -356,16 +314,25 @@ def amount_in_words(amount: Decimal) -> str:
 
 @dataclass
 class Document:
-    exporter: list
-    consignee: list
-    ship_to: list
     invoice: Invoice
-    origin: str = "INDIA"
+    order_title: str = ""
+    export_details: dict = field(default_factory=dict)
+    # Other Consignee when the export details name none.
+    ship_to: list = field(default_factory=list)
 
 
 def write_document(sheet, doc: Document) -> None:
     set_widths(sheet)
-    row = write_heading(sheet, doc.exporter, doc.consignee, doc.ship_to)
+    write_title(sheet)
+    row = export_header.draw(
+        sheet,
+        GRID,
+        top=2,
+        reference="IEC CODE",
+        title=invoice_title(doc.order_title),
+        export_details=doc.export_details,
+        ship_to=doc.ship_to,
+    )
 
     write_column_headers(sheet, row)
     row += 1
@@ -375,7 +342,7 @@ def write_document(sheet, doc: Document) -> None:
         row += 1
 
     row = write_totals(sheet, row, doc.invoice)
-    write_footer(sheet, row, doc.invoice, doc.exporter[0])
+    write_footer(sheet, row, doc.invoice, settings.EXPORT_DOCUMENT_HEADER["exporter"][0])
 
 
 def _places(number_format: str | None) -> int | None:
@@ -392,13 +359,14 @@ def _plain(value):
 
 
 def document_json(doc: Document) -> dict:
+    header = settings.EXPORT_DOCUMENT_HEADER
     invoice = doc.invoice
     return {
-        "title": "COMMERCIAL INVOICE",
-        "exporter": doc.exporter,
-        "consignee": doc.consignee,
-        "ship_to": doc.ship_to,
-        "origin": doc.origin,
+        "title": TITLE_TEXT,
+        "exporter": header["exporter"],
+        "consignee": header["consignee"],
+        "ship_to": export_header.other_consignee(doc.export_details, doc.ship_to),
+        "origin": header["country_of_origin"],
         "shipment_fields": [list(group) for group in SHIPMENT_FIELDS],
         "columns": [
             {"label": label, "places": _places(number_format)}
@@ -423,5 +391,5 @@ def document_json(doc: Document) -> dict:
         "note": IGST_NOTE,
         "declaration": DECLARATION,
         "signatory": SIGNATORY,
-        "for_exporter": f"for {doc.exporter[0]}",
+        "for_exporter": f"for {header['exporter'][0]}",
     }
