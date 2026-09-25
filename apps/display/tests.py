@@ -683,7 +683,7 @@ class DisplayPackingListTests(APITestCase):
         self.assertEqual(
             header,
             [
-                "SNO", "Carton Nos", "Total No of Boxes", "Store No", "Style No",
+                "Carton Nos", "Total No of Boxes", "Store No", "Style No",
                 "Customs Description", "Qty / Box", "Units", "NNW (kg)",
                 "N.W. (kg)", "G.W. (kg)", "L (in)", "W (in)", "H (in)",
                 "L (cm)", "W (cm)", "H (cm)", "CBM",
@@ -734,19 +734,6 @@ class DisplayPackingListTests(APITestCase):
 
         self.assertEqual(self.column("Store No"), [118, None])
         self.assertEqual(self.column("Carton Nos"), [1, None])
-
-    def test_every_row_gets_a_serial_number(self):
-        tree = product("DSP-TRE-60", 3.40, (30, 22, 6))
-        DisplayOrderLine.objects.create(
-            order=self.order, store=self.portland, product=tree, quantity=2
-        )
-        services.apply_step(
-            self.order, template("TPL-MIX", [(self.bow, 30), (tree, 2)]),
-            self.portland, count=1,
-        )
-        services.apply_step(self.order, self.tpl, self.austin, count=1)
-
-        self.assertEqual(self.column("SNO"), [1, 2, 3])
 
     def test_a_box_is_measured_in_inches_and_centimetres(self):
         """The CBM is worked from the centimetres printed beside it."""

@@ -1110,8 +1110,8 @@ buyer's sheet columns (`DisplayOrderLine.store_position`) — and each store is
 named in a `Store No` column on the first row of its run. There are no store
 banners or subtotals; one order total closes the sheet. That is the layout of
 the list the shipping desk made by hand (`PL 001.xlsx`), which also asked for
-a serial number per row, a `Total No of Boxes` column, and each box's sides in
-inches beside centimetres. The CBM is worked from the centimetres printed.
+a `Total No of Boxes` column and each box's sides in inches beside
+centimetres. The CBM is worked from the centimetres printed.
 
 The grouping and the carton-range notation are shared with Hardgoods in
 `apps/common/packing_sheet.py`; the columns are Display's own

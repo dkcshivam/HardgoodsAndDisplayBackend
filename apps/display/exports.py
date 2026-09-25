@@ -3,9 +3,9 @@ The Display packing list, in store order.
 
 A carton ships to exactly one store, so the sheet runs store by store in the
 order's sequence, naming the store on the first row of its run. The layout
-follows the list the shipping desk made by hand (`PL 001.xlsx`): a serial
-number per row, the box count, the store, then each box's sides in inches and
-in centimetres.
+follows the list the shipping desk made by hand (`PL 001.xlsx`): the box
+numbers and count, the store, then each box's sides in inches and in
+centimetres.
 
 The grouping and sheet furniture are shared with Hardgoods; the columns and
 the store run are particular to Display.
@@ -27,10 +27,10 @@ from .models import DisplayOrder, DisplayProduct
 
 LAYOUT = sheet_kit.Layout(
     columns=[
-        # Wide enough for the order facts above the table, which share it.
-        ("SNO", 10, "0"),
-        # A number format so a lone box and a `10 – 14` run align alike.
-        ("Carton Nos", 20, "0"),
+        # A number format so a lone box and a `10 – 14` run align alike. Wide
+        # enough for the order total's label, which the box count beside it
+        # leaves no empty cell to spill into.
+        ("Carton Nos", 30, "0"),
         ("Total No of Boxes", 9, "0"),
         ("Store No", 12, None),
         ("Style No", 18, None),
@@ -56,7 +56,7 @@ LAYOUT = sheet_kit.Layout(
         "G.W. (kg)",
         "CBM",
     },
-    header=export_header.Grid(left=5, split=2, middle=11, beside=8, labels=13, last=18),
+    header=export_header.Grid(left=4, split=1, middle=10, beside=7, labels=12, last=17),
 )
 
 
@@ -68,7 +68,7 @@ def packing_list_filename(order: DisplayOrder) -> str:
     return f"packing-list-{order.number}.xlsx"
 
 
-def _for_sheet(serial: int, store_no, sample, values: list, opens: bool) -> list:
+def _for_sheet(store_no, sample, values: list, opens: bool) -> list:
     """
     A canonical row from the shared kit, laid out in Display's columns. The
     inches are the box's own; the centimetres are the kit's, converted from
@@ -79,7 +79,6 @@ def _for_sheet(serial: int, store_no, sample, values: list, opens: bool) -> list
         [sample.length_in, sample.width_in, sample.height_in] if opens else [None] * 3
     )
     return [
-        serial,
         label,
         count,
         store_no,
@@ -108,7 +107,6 @@ def packing_document(order: DisplayOrder) -> sheet_kit.Document:
     # stored numbers run in step order, which interleaves the stores this
     # sheet is blocked by. See `number_groups` and §10.6.
     next_box = 1
-    serial = 0
 
     for store in _stores_in_order(order, by_store):
         cartons_here = by_store.get(store.id, [])
@@ -121,15 +119,11 @@ def packing_document(order: DisplayOrder) -> sheet_kit.Document:
         for group in groups:
             order_totals.add(group)
             for position, values in enumerate(group.rows()):
-                serial += 1
                 opens = position == 0
                 # Named once, where its run starts, as the hand-made list does.
                 store_no = _store_no(store) if not rows else None
                 rows.append(
-                    (
-                        _for_sheet(serial, store_no, group.cartons[0], values, opens),
-                        opens,
-                    )
+                    (_for_sheet(store_no, group.cartons[0], values, opens), opens)
                 )
 
         blocks.append(sheet_kit.Block(rows=rows))
