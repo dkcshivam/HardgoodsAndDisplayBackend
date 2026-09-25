@@ -170,18 +170,19 @@ class Group:
         return built
 
 
-def group_cartons(cartons: list) -> list[Group]:
+def group_cartons(cartons: list, *, merge_mixed: bool = False) -> list[Group]:
     """
-    Cartons collapse into one row when the box and its single content match
-    on every printed field. A carton holding more than one thing stands
-    alone — merging it would need every other carton to hold the same mix.
+    Cartons collapse into one row when the box and its contents match on
+    every printed field. Hardgoods keeps a carton holding more than one thing
+    on its own row (§7); Display passes `merge_mixed`, because every box of a
+    step holds the same mix and would otherwise print a row per box (§10.8).
     """
     groups: dict[tuple, Group] = {}
     ordered: list[Group] = []
 
     for carton in cartons:
         contents = list(carton.contents.all())
-        key = _key(carton, contents)
+        key = _key(carton, contents, merge_mixed)
 
         group = groups.get(key) if key else None
         if group is None:
@@ -195,19 +196,23 @@ def group_cartons(cartons: list) -> list[Group]:
     return ordered
 
 
-def _key(carton, contents: list) -> tuple | None:
+def _key(carton, contents: list, merge_mixed: bool) -> tuple | None:
     """None for anything that must keep a row of its own."""
-    if len(contents) != 1:
+    if not contents or (len(contents) > 1 and not merge_mixed):
         return None
 
-    content = contents[0]
     return (
-        content.product_id,
-        content.part_id,
-        content.description,
-        content.quantity,
-        content.unit,
-        content.net_weight_kg,
+        tuple(
+            (
+                content.product_id,
+                content.part_id,
+                content.description,
+                content.quantity,
+                content.unit,
+                content.net_weight_kg,
+            )
+            for content in contents
+        ),
         carton.gross_weight_kg,
         carton.length_in,
         carton.width_in,

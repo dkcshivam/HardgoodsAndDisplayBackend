@@ -114,7 +114,7 @@ def packing_document(order: DisplayOrder) -> sheet_kit.Document:
             continue
 
         rows = []
-        groups = sheet_kit.group_cartons(cartons_here)
+        groups = sheet_kit.group_cartons(cartons_here, merge_mixed=True)
         next_box = sheet_kit.number_groups(groups, next_box)
         for group in groups:
             order_totals.add(group)

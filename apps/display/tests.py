@@ -9,6 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APITestCase
 
+from apps.common import packing_sheet as sheet_kit
 from apps.masters.models import Merchant, Store
 
 from . import services
@@ -734,6 +735,44 @@ class DisplayPackingListTests(APITestCase):
 
         self.assertEqual(self.column("Store No"), [118, None])
         self.assertEqual(self.column("Carton Nos"), [1, None])
+
+    def mixed_step(self, trees_per_box, count):
+        """Pack Portland's bows with trees; Portland wants 6 trees."""
+        if not hasattr(self, "tree"):
+            self.tree = product("DSP-TRE-60", 3.40, (30, 22, 6))
+            DisplayOrderLine.objects.create(
+                order=self.order, store=self.portland, product=self.tree, quantity=6
+            )
+        mixed = template(
+            f"TPL-MIX-{trees_per_box}", [(self.bow, 10), (self.tree, trees_per_box)]
+        )
+        services.apply_step(self.order, mixed, self.portland, count=count)
+
+    def test_identical_mixed_boxes_share_one_row(self):
+        """§10.8: every box of a step holds the same mix, so a step is one run."""
+        self.mixed_step(trees_per_box=2, count=3)
+
+        self.assertEqual(self.column("Carton Nos"), ["1 – 3", None])
+        self.assertEqual(self.column("Total No of Boxes"), [3, None])
+        self.assertEqual(self.column("Style No"), ["DSP-BOW-12", "DSP-TRE-60"])
+        header, _, total = self.table()
+        self.assertEqual(total[header.index("Total No of Boxes")], 3)
+        self.assertEqual(total[header.index("Qty / Box")], 36)
+
+    def test_a_different_mix_keeps_its_own_row(self):
+        self.mixed_step(trees_per_box=2, count=2)
+        self.mixed_step(trees_per_box=1, count=1)
+
+        self.assertEqual(self.column("Carton Nos"), ["1 – 2", None, 3, None])
+        self.assertEqual(self.column("Total No of Boxes"), [2, None, 1, None])
+
+    def test_hardgoods_still_lists_mixed_cartons_one_by_one(self):
+        """The merge is Display's (§10.8); the shared default stays §7."""
+        self.mixed_step(trees_per_box=2, count=3)
+        cartons = list(self.order.cartons.all())
+
+        self.assertEqual(len(sheet_kit.group_cartons(cartons)), 3)
+        self.assertEqual(len(sheet_kit.group_cartons(cartons, merge_mixed=True)), 1)
 
     def test_a_box_is_measured_in_inches_and_centimetres(self):
         """The CBM is worked from the centimetres printed beside it."""
