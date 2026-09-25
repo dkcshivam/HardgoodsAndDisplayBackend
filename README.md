@@ -36,6 +36,12 @@ docker compose exec backend python manage.py makemigrations   # after a model ch
 
 Migrations run automatically every time the container starts.
 
+## Production
+
+`docker compose up -d` is the development setup: Django's dev server with
+DEBUG on. Production has its own compose file in each repo — see
+[DEPLOY.md](DEPLOY.md).
+
 ## What is where
 
 | Path | What it holds |
@@ -46,3 +52,4 @@ Migrations run automatically every time the container starts.
 | `apps/orders/` | Orders, cartons, `services.py` (the packing engine) and `exports.py` (the packing list) |
 | `config/` | Settings and URL routing |
 | `ARCHITECTURE.md` | **The spec.** Read this before changing behaviour. |
+| `DEPLOY.md` | Running both repos in production. |
