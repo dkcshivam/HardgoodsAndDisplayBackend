@@ -175,8 +175,9 @@ EXPORT_DOCUMENT_HEADER = {
         "INDIA",
         "Tel- + 9111 26124358",
     ],
-    # Exporter registration numbers (static)
-    "exporter_ref_no": "IEC No 0506081460",
+    # Importer-Exporter Code (static). The invoice captions it "IEC CODE",
+    # the packing list "Exporter's Ref No"; both print "IEC No <code>".
+    "iec_code": "0506081460",
     "gstin": "07AACCD0416A1ZJ",
     # Consignee details (static)
     "consignee": [

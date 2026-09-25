@@ -83,7 +83,7 @@ def draw(
     row = top
     block(sheet, row, row + 4, left, "Exporter", "\n".join(header["exporter"]), static)
 
-    iec = header["exporter_ref_no"]
+    iec = f"IEC No {header['iec_code']}"
     if grid.beside:
         number = (grid.left + 1, grid.beside)
         block(sheet, row, row + 1, number, "Invoice No & Date", _invoice_no(detail), entered)

@@ -4,6 +4,7 @@ from collections import Counter
 from decimal import Decimal
 from io import BytesIO
 
+from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APITestCase
@@ -87,6 +88,15 @@ def template(code, items, box=(28, 20, 16), box_kg=0.8, packing_kg=0.25):
     for prod, quantity in items:
         PackTemplateItem.objects.create(template=tpl, product=prod, quantity=quantity)
     return tpl
+
+
+def under(sheet, caption):
+    """What a heading box holds: the cell beneath its caption."""
+    for row in sheet.iter_rows():
+        for cell in row:
+            if cell.value == caption:
+                return sheet.cell(row=cell.row + 1, column=cell.column).value
+    raise AssertionError(f"no {caption!r} on the sheet")
 
 
 class DisplayPackingTests(TestCase):
@@ -640,6 +650,13 @@ class DisplayPackingListTests(APITestCase):
     def url(self):
         return f"/api/display-orders/{self.order.id}/packing-list/"
 
+    def sheet(self, document="packing-list"):
+        from openpyxl import load_workbook
+
+        response = self.client.get(f"/api/display-orders/{self.order.id}/{document}/")
+        self.assertEqual(response.status_code, 200)
+        return load_workbook(BytesIO(b"".join(response.streaming_content))).active
+
     def rows(self):
         from openpyxl import load_workbook
 
@@ -781,6 +798,15 @@ class DisplayPackingListTests(APITestCase):
         services.apply_step(self.order, self.tpl, self.portland, count=1)
 
         self.assertEqual(self.column("Store No"), [118])
+
+    def test_the_iec_code_comes_from_settings(self):
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        header = {**settings.EXPORT_DOCUMENT_HEADER, "iec_code": "0999999999"}
+
+        with override_settings(EXPORT_DOCUMENT_HEADER=header):
+            sheet = self.sheet()
+
+        self.assertEqual(under(sheet, "Exporter's Ref No"), "IEC No 0999999999")
 
     def test_the_invoice_prints_the_hts_code_not_the_hsn(self):
         """The buyer's customs clear on the US tariff code, not India's HSN."""
