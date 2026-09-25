@@ -181,6 +181,9 @@ STORAGES = {
 # the public media one.
 AWS_BACKUP_BUCKET_NAME = env("AWS_BACKUP_BUCKET_NAME")
 
+# Tests store uploads on local disk even where S3 is configured.
+TEST_RUNNER = "config.test_runner.LocalStorageRunner"
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
