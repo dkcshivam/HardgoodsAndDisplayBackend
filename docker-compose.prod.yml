@@ -46,6 +46,13 @@ services:
       # Empty is right when the frontend proxies /api, as its production
       # compose does: the browser then never calls this origin itself.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # Images go to S3 once a bucket is named, and the nightly backup to
+      # the private one. Without them images stay on the media volume below.
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-}
+      AWS_BACKUP_BUCKET_NAME: ${AWS_BACKUP_BUCKET_NAME:-}
+      AWS_REGION: ${AWS_REGION:-ap-south-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     volumes:
       - media:/app/media
     ports:

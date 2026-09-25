@@ -34,12 +34,14 @@ urlpatterns = [
     path("api/auth/", include("rest_framework.urls")),  # browsable API login
 ]
 
-# Product images, and in production the admin's CSS, are served by Django
-# itself: for a handful of users that is simpler than a separate file server.
-# With DEBUG on, runserver already serves static files.
-urlpatterns += [
-    re_path(r"^media/(?P<path>.*)$", serve, {"document_root": settings.MEDIA_ROOT}),
-]
+# Product images kept on disk, and in production the admin's CSS, are served
+# by Django itself: for a handful of users that is simpler than a separate
+# file server. Images on S3 are served by S3. With DEBUG on, runserver already
+# serves static files.
+if not settings.USE_S3:
+    urlpatterns += [
+        re_path(r"^media/(?P<path>.*)$", serve, {"document_root": settings.MEDIA_ROOT}),
+    ]
 if not settings.DEBUG:
     urlpatterns += [
         re_path(r"^static/(?P<path>.*)$", serve, {"document_root": settings.STATIC_ROOT}),

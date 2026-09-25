@@ -119,7 +119,9 @@ DATABASES = {
 # ── Auth ─────────────────────────────────────────────────────────────
 
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
@@ -139,10 +141,45 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Local disk, served by Django itself (see urls.py). In production this is a
-# Docker volume, so uploads outlive the container.
+# Uploaded images. Naming a bucket moves them to S3; without one (development,
+# tests) they stay on local disk, served by Django itself (see urls.py).
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME")
+USE_S3 = bool(AWS_STORAGE_BUCKET_NAME)
+
+# Credentials are not settings: boto3 reads AWS_ACCESS_KEY_ID and
+# AWS_SECRET_ACCESS_KEY from the environment, or a server role if it has one.
+S3_MEDIA = {
+    "bucket_name": AWS_STORAGE_BUCKET_NAME,
+    "region_name": env("AWS_REGION", "ap-south-1"),
+    "location": "media",
+    # The bucket policy makes media/ public, so plain URLs: a signed one
+    # would expire, and the frontend keeps image URLs around.
+    "querystring_auth": False,
+    # New buckets refuse per-object ACLs; the policy is what grants reads.
+    "default_acl": None,
+    # A second photo with the same file name keeps both, as on disk.
+    "file_overwrite": False,
+}
+# An S3-compatible service instead of AWS, such as a local stand-in to test
+# against. It answers on a plain hostname, not <bucket>.<host>.
+if endpoint := env("AWS_S3_ENDPOINT_URL"):
+    S3_MEDIA |= {"endpoint_url": endpoint, "addressing_style": "path"}
+
+STORAGES = {
+    "default": (
+        {"BACKEND": "storages.backends.s3.S3Storage", "OPTIONS": S3_MEDIA}
+        if USE_S3
+        else {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+    ),
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
+# Where `manage.py backup_database` puts its dumps: a private bucket, never
+# the public media one.
+AWS_BACKUP_BUCKET_NAME = env("AWS_BACKUP_BUCKET_NAME")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -248,5 +285,3 @@ EXPORT_DOCUMENT_HEADER = {
         ("CONTAINER NO", ""),
     ],
 }
-
-
