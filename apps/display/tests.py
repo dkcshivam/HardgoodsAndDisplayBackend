@@ -698,9 +698,38 @@ class DisplayPackingListTests(APITestCase):
 
         self.assertEqual(notice.value, "Formula not applied on this sheet")
         self.assertTrue(notice.font.bold)
-        self.assertGreaterEqual(notice.font.size, 16)
+        self.assertEqual(notice.font.size, 36)
         self.assertIn("A1:R1", {str(merged) for merged in sheet.merged_cells.ranges})
         self.assertEqual(sheet.cell(row=2, column=1).value, "Exporter")
+
+    def alignments(self, document, header_text):
+        """How each column of the first item row sits, by column heading."""
+        sheet = self.sheet(document)
+        at = next(
+            row for row in range(1, sheet.max_row + 1)
+            if header_text in [cell.value for cell in sheet[row]]
+        )
+        return {
+            heading.value: (item.alignment.horizontal, item.alignment.vertical)
+            for heading, item in zip(sheet[at], sheet[at + 1])
+            if heading.value
+        }
+
+    def test_only_descriptions_sit_left_on_the_packing_list(self):
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        cells = self.alignments("packing-list", "Style No")
+
+        self.assertEqual(cells.pop("Customs Description"), ("left", "center"))
+        self.assertEqual(set(cells.values()), {("center", "center")})
+
+    def test_only_descriptions_sit_left_on_the_invoice(self):
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        cells = self.alignments("invoice", "CUSTOMS DESCRIPTION WITH CONTENTS")
+
+        self.assertEqual(
+            cells.pop("CUSTOMS DESCRIPTION WITH CONTENTS"), ("left", "center")
+        )
+        self.assertEqual(set(cells.values()), {("center", "center")})
 
     def test_the_json_document_carries_what_the_sheet_does(self):
         """One builder feeds both, so the PDF and the .xlsx cannot drift."""

@@ -111,7 +111,12 @@ BORDER = Border(left=RULE, right=RULE, top=RULE, bottom=RULE)
 # than the ones between its own styles.
 EDGE = Side(style="medium", color="8B93A3")
 
-NOTICE = Font(name="Calibri", size=16, bold=True, color="C00000")
+NOTICE = Font(name="Calibri", size=36, bold=True, color="C00000")
+
+# Only prose reads better flush left; codes, counts and weights sit centred.
+LONG_TEXT = {"Customs Description"}
+CENTRED = Alignment(horizontal="center", vertical="center")
+FLUSH_LEFT = Alignment(horizontal="left", vertical="center")
 
 #: What a sheet prints unless it says otherwise — Hardgoods uses this as is.
 BASE = Layout(
@@ -441,14 +446,14 @@ def write_row(
     border = (
         Border(left=RULE, right=RULE, top=EDGE, bottom=RULE) if opens else BORDER
     )
-    for index, (value, (_, _, number_format)) in enumerate(
+    for index, (value, (label, _, number_format)) in enumerate(
         zip(values, layout.columns), start=1
     ):
         cell = sheet.cell(row=row, column=index, value=value)
         cell.border = border
+        cell.alignment = FLUSH_LEFT if label in LONG_TEXT else CENTRED
         if number_format:
             cell.number_format = number_format
-            cell.alignment = Alignment(horizontal="right")
 
 
 def write_banner(sheet, row: int, text: str, layout: Layout = None) -> None:
@@ -479,6 +484,7 @@ def write_totals(
 
     heading = sheet.cell(row=row, column=1, value=label)
     heading.font = Font(bold=True)
+    heading.alignment = FLUSH_LEFT
 
     figures = totals.by_column()
     for index, (label_text, _, number_format) in enumerate(layout.columns, start=1):
@@ -488,7 +494,7 @@ def write_totals(
         cell.font = Font(bold=True)
         cell.border = Border(top=Side(style="double", color="9AA2B1"))
         cell.number_format = number_format or "0"
-        cell.alignment = Alignment(horizontal="right")
+        cell.alignment = CENTRED
 
 
 # ── Document ─────────────────────────────────────────────────────────
@@ -538,8 +544,8 @@ def write_notice(sheet, row: int, text: str, layout: Layout) -> None:
     sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=last)
     cell = sheet.cell(row=row, column=1, value=text)
     cell.font = NOTICE
-    cell.alignment = Alignment(horizontal="center", vertical="center")
-    sheet.row_dimensions[row].height = 26
+    cell.alignment = CENTRED
+    sheet.row_dimensions[row].height = 48
 
 
 def write_document(sheet, doc: Document) -> None:

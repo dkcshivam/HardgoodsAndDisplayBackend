@@ -45,6 +45,11 @@ COLUMNS = [
 
 SERIAL, STYLE, HTS, DESCRIPTION, QTY, NET, RATE, AMOUNT = range(8)
 
+# Only the description is prose and reads flush left; every code, count and
+# figure sits centred in its cell.
+CENTRED = Alignment(horizontal="center", vertical="center", wrap_text=True)
+FLUSH_LEFT = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
 TITLE_TEXT = "COMMERCIAL INVOICE"
 
 # The middle band is the description column alone, too narrow to split, so
@@ -191,11 +196,9 @@ def write_line(sheet, row: int, values: list) -> None:
         cell = sheet.cell(row=row, column=index, value=value)
         cell.border = BOX
         cell.font = VALUE
+        cell.alignment = FLUSH_LEFT if index - 1 == DESCRIPTION else CENTRED
         if number_format:
             cell.number_format = number_format
-            cell.alignment = Alignment(horizontal="right")
-        else:
-            cell.alignment = Alignment(vertical="center", wrap_text=True)
 
 
 def write_marks(sheet, row: int, marks: str, boxes: int) -> int:
@@ -230,7 +233,7 @@ def write_totals(sheet, row: int, invoice: Invoice) -> int:
             cell.value = figures[index]
             cell.font = Font(bold=True)
             cell.number_format = number_format or "0"
-            cell.alignment = Alignment(horizontal="right")
+            cell.alignment = CENTRED
     return row + 1
 
 
@@ -283,7 +286,7 @@ def _amount_row(sheet, row: int, label: str, amount: Decimal) -> None:
     figure = sheet.cell(row=row, column=last, value=amount)
     figure.font = Font(bold=True)
     figure.number_format = "0.00"
-    figure.alignment = Alignment(horizontal="right", vertical="center")
+    figure.alignment = CENTRED
 
     for column in range(1, last + 1):
         sheet.cell(row=row, column=column).border = BOX
