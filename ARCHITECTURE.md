@@ -500,8 +500,8 @@ commercial invoice — **one row per style across the whole shipment**, where th
 packing list is one row per distinct thing packed.
 
 ```
-Serial No · Style No · HTS Code · Customs Description with Contents ·
-Qty in Pcs · N.Wt. in Kgs. · Rate in US$ · Amount in US$
+Serial No · Style No · HTS CODE · CUSTOMS DESCRIPTION WITH CONTENTS ·
+Qty in Pcs · N.Wt. in Kgs. · Rate in $ · Amount in US $
 ```
 
 Billed on what is **packed**, counted the way `reconcile` counts it: a
@@ -517,7 +517,13 @@ sent. An unpriced style prints its quantity and weight with the two money
 columns blank, and the total is omitted rather than understated.
 
 Under a COMMERCIAL INVOICE title it opens with the same heading as the packing
-list.
+list. Below the lines it ends as the desk's own invoice does: a `MARKS.` row
+giving the box numbers as the packing list prints them and how many boxes there
+are; the TOTAL of pieces and net weight; the country of origin; then, when
+priced, the chargeable amount in words beside its figure, and the total after
+tax; the IGST note naming the consignee; and the declaration with the
+signatory's block. The amount's total stands beside its words rather than in
+the TOTAL row, so it is not printed twice over.
 
 ### Export heading
 

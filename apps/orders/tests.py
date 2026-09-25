@@ -424,3 +424,50 @@ class ExportHeadingTests(OrderFixture):
             under(self.sheet("invoice"), "Other Consignee (Shipp To-)"),
             "L&J Transportation",
         )
+
+
+class InvoiceFooterTests(OrderFixture):
+    """Below its lines the invoice ends the way the desk's own does."""
+
+    def row(self, first):
+        """The sheet row whose first value is `first`, blanks dropped."""
+        response = self.client.get(self.url("invoice"))
+        self.assertEqual(response.status_code, 200)
+        sheet = load_workbook(BytesIO(b"".join(response.streaming_content))).active
+        for values in sheet.iter_rows(values_only=True):
+            found = [value for value in values if value is not None]
+            if found and found[0] == first:
+                return found
+        raise AssertionError(f"no row starts {first!r}")
+
+    def test_the_marks_name_every_box(self):
+        self.client.post(self.url("auto-pack"))
+
+        self.assertEqual(self.row("MARKS."), ["MARKS.", "BOX-001 – BOX-007", "7 BOXES"])
+
+    def test_a_priced_total_is_spelled_out_and_carried_after_tax(self):
+        self.order.lines.filter(product=self.chair).update(rate_usd=Decimal("12.50"))
+        self.order.lines.filter(product=self.table).update(rate_usd=Decimal("80.25"))
+        self.client.post(self.url("auto-pack"))
+
+        # Pieces and kilograms total under their columns; the money is not
+        # repeated there but stands beside its words.
+        self.assertEqual(self.row("TOTAL"), ["TOTAL", 8, 76])
+        self.assertEqual(
+            self.row(
+                "TOTAL CHARGEABLE AMOUNT IN US DOLLAR — "
+                "TWO HUNDRED THIRTY FIVE AND FIFTY CENTS ONLY"
+            )[1],
+            235.5,
+        )
+        self.assertEqual(self.row("Total Amount after tax"), ["Total Amount after tax", 235.5])
+
+    def test_the_amount_is_spelled_to_the_cent(self):
+        from apps.common.invoice_sheet import amount_in_words
+
+        self.assertEqual(
+            amount_in_words(Decimal("27575.94")),
+            "TWENTY SEVEN THOUSAND FIVE HUNDRED SEVENTY FIVE AND NINETY FOUR CENTS ONLY",
+        )
+        self.assertEqual(amount_in_words(Decimal("100.00")), "ONE HUNDRED ONLY")
+        self.assertEqual(amount_in_words(Decimal("1.01")), "ONE AND ONE CENT ONLY")

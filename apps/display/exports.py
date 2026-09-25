@@ -223,10 +223,14 @@ def invoice_document(order: DisplayOrder) -> invoice_kit.Document:
             rate=rates.get(product_id),
         )
 
+    boxes = order.cartons.count()
     return invoice_kit.Document(
         invoice=invoice,
         order_title=order.name,
         export_details=order.export_details or {},
+        # The packing list numbers every box afresh from 1 — see number_groups.
+        marks="1" if boxes == 1 else f"1 – {boxes}",
+        boxes=boxes,
     )
 
 

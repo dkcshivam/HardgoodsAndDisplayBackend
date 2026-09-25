@@ -125,11 +125,14 @@ def invoice_document(order: Order) -> invoice_kit.Document:
             rate=line.rate_usd,
         )
 
+    cartons = list(order.cartons.all())
     return invoice_kit.Document(
         invoice=invoice,
         order_title=order.name,
         export_details=order.export_details or {},
         ship_to=_ship_to(order),
+        marks=sheet_kit.carton_range(cartons),
+        boxes=len(cartons),
     )
 
 

@@ -31,16 +31,16 @@ TITLE = Font(bold=True, size=14)
 VALUE = Font(size=10)
 HEAD = Font(bold=True, size=9)
 
-# label, width, number format
+# label, width, number format — captioned as the desk captions its own
 COLUMNS = [
     ("Serial No", 9, "0"),
     ("Style No", 18, None),
-    ("HTS Code", 14, None),
-    ("Customs Description with Contents", 46, None),
+    ("HTS CODE", 14, None),
+    ("CUSTOMS DESCRIPTION WITH CONTENTS", 46, None),
     ("Qty in Pcs", 11, "0"),
     ("N.Wt. in Kgs.", 13, "0.000"),
-    ("Rate in US$", 12, "0.00"),
-    ("Amount in US$", 15, "0.00"),
+    ("Rate in $", 12, "0.00"),
+    ("Amount in US $", 15, "0.00"),
 ]
 
 SERIAL, STYLE, HTS, DESCRIPTION, QTY, NET, RATE, AMOUNT = range(8)
@@ -51,12 +51,16 @@ TITLE_TEXT = "COMMERCIAL INVOICE"
 # the IEC box stacks above the LC box — as on the desk's own invoice.
 GRID = export_header.Grid(left=3, split=2, middle=4, beside=None, labels=6, last=8)
 
-ORIGIN_LINE = "COUNTRY OF ORIGIN OF GOODS — INDIA"
-IGST_NOTE = "Note: IGST is paid under the refund mechanism; no charge to the buyer."
+IGST_NOTE = (
+    "Note : IGST @ 18% is paid under refund mechanism and NO CHARGE TO {consignee}. "
+    "Supply/service meant for export/supply of sez developer for authorised "
+    "operations on payment of IGST"
+)
 SIGNATORY = "Authorised Signatory"
 DECLARATION = [
-    "We declare that this invoice shows the actual price of the goods",
+    "We declare that this Invoice shows the actual Price of goods",
     "described and that all particulars are true and correct.",
+    "The above is true to the best of our knowledge",
 ]
 
 
@@ -193,12 +197,25 @@ def write_line(sheet, row: int, values: list) -> None:
             cell.alignment = Alignment(vertical="center", wrap_text=True)
 
 
-def write_totals(sheet, row: int, invoice: Invoice) -> int:
-    figures = {
-        QTY: invoice.total_quantity,
-        NET: invoice.total_net_weight_kg,
-        AMOUNT: invoice.total_amount_usd if invoice.is_priced else None,
+def write_marks(sheet, row: int, marks: str, boxes: int) -> int:
+    """The boxes the goods travel in, numbered as the packing list numbers them."""
+    values = {
+        SERIAL: "MARKS.",
+        STYLE: marks,
+        HTS: f"{boxes} BOX{'ES' if boxes != 1 else ''}",
     }
+    for index in range(len(COLUMNS)):
+        cell = sheet.cell(row=row, column=index + 1, value=values.get(index))
+        cell.border = BOX
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    return row + 1
+
+
+def write_totals(sheet, row: int, invoice: Invoice) -> int:
+    # The amount's total stands beside its words further down, where the
+    # desk's own invoice puts it, rather than twice over.
+    figures = {QTY: invoice.total_quantity, NET: invoice.total_net_weight_kg}
 
     sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=QTY)
     label = sheet.cell(row=row, column=1, value="TOTAL")
@@ -216,37 +233,34 @@ def write_totals(sheet, row: int, invoice: Invoice) -> int:
     return row + 1
 
 
-def write_footer(sheet, row: int, invoice: Invoice, exporter_name: str) -> None:
+def write_footer(sheet, row: int, invoice: Invoice) -> None:
     last = len(COLUMNS)
-    row += 1
 
-    sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=last)
-    origin = sheet.cell(row=row, column=1, value=ORIGIN_LINE)
+    for column in range(1, last + 1):
+        sheet.cell(row=row, column=column).border = BOX
+    origin = sheet.cell(row=row, column=DESCRIPTION + 1, value=origin_line())
     origin.font = Font(bold=True)
     row += 2
 
     if invoice.is_priced:
-        words = amount_in_words(invoice.total_amount_usd)
-        sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=RATE)
-        spelled = sheet.cell(
-            row=row,
-            column=1,
-            value=f"TOTAL CHARGEABLE AMOUNT IN US DOLLAR — {words}",
-        )
-        spelled.font = Font(bold=True)
-        amount = sheet.cell(row=row, column=last, value=invoice.total_amount_usd)
-        amount.font = Font(bold=True)
-        amount.number_format = "0.00"
-        amount.alignment = Alignment(horizontal="right")
-        row += 2
+        total = invoice.total_amount_usd
+        words = amount_in_words(total)
+        _amount_row(sheet, row, f"TOTAL CHARGEABLE AMOUNT IN US DOLLAR — {words}", total)
+        # A long amount spelled out runs onto a second line.
+        sheet.row_dimensions[row].height = 30
+        _amount_row(sheet, row + 1, "Total Amount after tax", total)
+        row += 3
 
     sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=last)
-    sheet.cell(row=row, column=1, value=IGST_NOTE).font = Font(size=9)
+    note = sheet.cell(row=row, column=1, value=igst_note())
+    note.font = Font(bold=True, size=9)
+    note.alignment = Alignment(vertical="top", wrap_text=True)
+    sheet.row_dimensions[row].height = 30
     row += 2
 
     declaration = sheet.cell(row=row, column=1, value="Declaration:")
-    declaration.font = Font(bold=True)
-    signatory = sheet.cell(row=row, column=RATE, value=SIGNATORY)
+    declaration.font = Font(bold=True, underline="single")
+    signatory = sheet.cell(row=row, column=RATE + 1, value=SIGNATORY)
     signatory.font = Font(bold=True)
     row += 1
 
@@ -254,9 +268,33 @@ def write_footer(sheet, row: int, invoice: Invoice, exporter_name: str) -> None:
         sheet.cell(row=row, column=1, value=text).font = Font(size=9)
         row += 1
 
-    sheet.cell(row=row + 1, column=RATE, value=f"for {exporter_name}").font = Font(
-        size=9
-    )
+    exporter = settings.EXPORT_DOCUMENT_HEADER["exporter"][0]
+    sheet.cell(row=row, column=RATE + 1, value=f"for {exporter}").font = Font(size=9)
+
+
+def _amount_row(sheet, row: int, label: str, amount: Decimal) -> None:
+    last = len(COLUMNS)
+    sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=AMOUNT)
+    caption = sheet.cell(row=row, column=1, value=label)
+    caption.font = Font(bold=True)
+    caption.alignment = Alignment(vertical="center", wrap_text=True)
+
+    figure = sheet.cell(row=row, column=last, value=amount)
+    figure.font = Font(bold=True)
+    figure.number_format = "0.00"
+    figure.alignment = Alignment(horizontal="right", vertical="center")
+
+    for column in range(1, last + 1):
+        sheet.cell(row=row, column=column).border = BOX
+
+
+def origin_line() -> str:
+    return f"COUNTRY OF ORIGIN OF GOODS - {settings.EXPORT_DOCUMENT_HEADER['country_of_origin']}"
+
+
+def igst_note() -> str:
+    """Names the consignee the refunded IGST is no charge to."""
+    return IGST_NOTE.format(consignee=settings.EXPORT_DOCUMENT_HEADER["consignee"][0])
 
 
 # ── Amount in words ──────────────────────────────────────────────────
@@ -297,11 +335,13 @@ def _spell(number: int) -> str:
 
 
 def amount_in_words(amount: Decimal) -> str:
-    """`SIXTEEN THOUSAND ONE HUNDRED NINETY THREE AND 18/100 ONLY`."""
+    """`TWENTY SEVEN THOUSAND FIVE HUNDRED SEVENTY FIVE AND NINETY FOUR CENTS ONLY`."""
     whole = int(amount)
     cents = int((amount - whole) * 100)
     words = _spell(whole)
-    return f"{words} AND {cents:02d}/100 ONLY"
+    if not cents:
+        return f"{words} ONLY"
+    return f"{words} AND {_spell(cents)} CENT{'S' if cents != 1 else ''} ONLY"
 
 
 
@@ -319,6 +359,9 @@ class Document:
     export_details: dict = field(default_factory=dict)
     # Other Consignee when the export details name none.
     ship_to: list = field(default_factory=list)
+    # The shipping marks: the box numbers as the packing list prints them.
+    marks: str = ""
+    boxes: int = 0
 
 
 def write_document(sheet, doc: Document) -> None:
@@ -341,8 +384,9 @@ def write_document(sheet, doc: Document) -> None:
         write_line(sheet, row, line.row(serial))
         row += 1
 
+    row = write_marks(sheet, row, doc.marks, doc.boxes)
     row = write_totals(sheet, row, doc.invoice)
-    write_footer(sheet, row, doc.invoice, settings.EXPORT_DOCUMENT_HEADER["exporter"][0])
+    write_footer(sheet, row, doc.invoice)
 
 
 def _places(number_format: str | None) -> int | None:
@@ -387,8 +431,8 @@ def document_json(doc: Document) -> dict:
         "amount_in_words": amount_in_words(invoice.total_amount_usd)
         if invoice.is_priced
         else "",
-        "origin_line": ORIGIN_LINE,
-        "note": IGST_NOTE,
+        "origin_line": origin_line(),
+        "note": igst_note(),
         "declaration": DECLARATION,
         "signatory": SIGNATORY,
         "for_exporter": f"for {header['exporter'][0]}",

@@ -840,6 +840,17 @@ class DisplayPackingListTests(APITestCase):
 
         self.assertIn("INVOICE FOR SPLIT", values)
 
+    def test_the_invoice_marks_the_boxes_as_the_packing_list_numbers_them(self):
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        services.apply_step(self.order, self.tpl, self.austin, count=1)
+
+        marks = next(
+            [value for value in row if value is not None]
+            for row in self.sheet("invoice").iter_rows(values_only=True)
+            if row[0] == "MARKS."
+        )
+        self.assertEqual(marks, ["MARKS.", "1 – 2", "2 BOXES"])
+
     def test_the_invoice_prints_the_hts_code_not_the_hsn(self):
         """The buyer's customs clear on the US tariff code, not India's HSN."""
         DisplayProduct.objects.filter(pk=self.bow.pk).update(
