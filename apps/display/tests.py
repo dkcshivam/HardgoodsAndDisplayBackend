@@ -799,6 +799,19 @@ class DisplayPackingListTests(APITestCase):
 
         self.assertEqual(self.column("Store No"), [118])
 
+    def test_descriptions_print_in_capitals_however_they_were_typed(self):
+        DisplayProduct.objects.filter(pk=self.bow.pk).update(
+            description="velvet bow", customs_description="100% polyester decorative bow"
+        )
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+
+        self.assertEqual(self.column("Customs Description"), ["VELVET BOW"])
+        invoice_row = next(
+            row for row in self.sheet("invoice").iter_rows(values_only=True)
+            if row[1] == "DSP-BOW-12"
+        )
+        self.assertEqual(invoice_row[3], "100% POLYESTER DECORATIVE BOW")
+
     def test_the_iec_code_comes_from_settings(self):
         services.apply_step(self.order, self.tpl, self.portland, count=1)
         header = {**settings.EXPORT_DOCUMENT_HEADER, "iec_code": "0999999999"}

@@ -354,13 +354,18 @@ def describe(content) -> str:
     The customs wording where there is any, and the nearest thing to it where
     there is not. A blank cell here is a document a broker cannot clear, and
     a Display product often carries only a style name.
+
+    Always in capitals, however the catalogue typed it, so a column mixing
+    customs wording with style names still reads as one hand.
     """
     if content.description:
-        return content.description
-    if content.part_id:
+        wording = content.description
+    elif content.part_id:
         part = content.part
-        return part.customs_description or f"{_names(content.product)} — {part.name}"
-    return _names(content.product)
+        wording = part.customs_description or f"{_names(content.product)} — {part.name}"
+    else:
+        wording = _names(content.product)
+    return wording.upper()
 
 
 def _names(product) -> str:

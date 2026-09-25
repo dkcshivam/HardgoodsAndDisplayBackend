@@ -487,7 +487,8 @@ computed values, not `SUM()` formulas. Dimensions are deliberately not totalled.
 
 `Customs Description` takes the content's own wording, then the piece's
 `customs_description`, then its style name — a blank here is a document a
-broker cannot clear.
+broker cannot clear. It prints in capitals whatever case the catalogue holds,
+here and on the invoice, in the sheet and on the print page alike.
 
 Available as soon as cartons exist — a draft list is what the floor works from
 while the order is packed — and built from what is **stored**, so the screen

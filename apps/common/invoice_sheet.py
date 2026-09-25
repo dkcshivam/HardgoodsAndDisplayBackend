@@ -97,7 +97,8 @@ class Line:
             serial,
             self.style_no,
             self.hts_code,
-            self.description,
+            # In capitals, as the packing list prints the same wording.
+            self.description.upper(),
             self.quantity,
             self.net_weight_kg.quantize(WEIGHT),
             self.rate_usd,

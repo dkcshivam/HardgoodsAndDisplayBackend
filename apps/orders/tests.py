@@ -236,7 +236,7 @@ class PackingListTests(OrderFixture):
 
         self.assertEqual(
             [row[self.DESCRIPTION] for row in rows],
-            ["Chair", "Table — Top", "Table — Legs"],
+            ["CHAIR", "TABLE — TOP", "TABLE — LEGS"],
         )
 
     def test_a_row_names_its_carton_range_and_counts_them(self):
