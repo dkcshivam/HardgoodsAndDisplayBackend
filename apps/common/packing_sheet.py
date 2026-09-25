@@ -111,6 +111,8 @@ BORDER = Border(left=RULE, right=RULE, top=RULE, bottom=RULE)
 # than the ones between its own styles.
 EDGE = Side(style="medium", color="8B93A3")
 
+NOTICE = Font(name="Calibri", size=16, bold=True, color="C00000")
+
 #: What a sheet prints unless it says otherwise — Hardgoods uses this as is.
 BASE = Layout(
     COLUMNS,
@@ -518,6 +520,9 @@ class Document:
     export_details: dict = field(default_factory=dict)
     # Other Consignee when the export details name none.
     ship_to: list = field(default_factory=list)
+    # A line above the heading, in the workbook only: the print page has no
+    # cells anyone could edit and expect to recalculate.
+    notice: str = ""
 
 
 def packing_title(name: str) -> str:
@@ -528,13 +533,27 @@ def packing_title(name: str) -> str:
     return f"PACKING LIST FOR {name}" + ("" if name.endswith("ITEMS") else " ITEMS")
 
 
+def write_notice(sheet, row: int, text: str, layout: Layout) -> None:
+    last = len(layout.columns)
+    sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=last)
+    cell = sheet.cell(row=row, column=1, value=text)
+    cell.font = NOTICE
+    cell.alignment = Alignment(horizontal="center", vertical="center")
+    sheet.row_dimensions[row].height = 26
+
+
 def write_document(sheet, doc: Document) -> None:
     set_widths(sheet, doc.layout)
+
+    top = 1
+    if doc.notice:
+        write_notice(sheet, top, doc.notice, doc.layout)
+        top += 1
 
     header_row = export_header.draw(
         sheet,
         doc.layout.header,
-        top=1,
+        top=top,
         reference="Exporter's Ref No",
         title=packing_title(doc.order_title or doc.title),
         export_details=doc.export_details,

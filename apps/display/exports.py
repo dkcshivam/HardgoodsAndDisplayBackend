@@ -157,6 +157,8 @@ def packing_document(order: DisplayOrder) -> sheet_kit.Document:
         total_label=f"ORDER TOTAL · all {_boxes(order_totals.cartons)}",
         layout=LAYOUT,
         export_details=order.export_details or {},
+        # Every figure is a typed value, so editing a cell changes no total.
+        notice="Formula not applied on this sheet",
     )
 
 

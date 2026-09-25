@@ -691,6 +691,17 @@ class DisplayPackingListTests(APITestCase):
             ],
         )
 
+    def test_the_sheet_warns_it_carries_no_formulas(self):
+        services.apply_step(self.order, self.tpl, self.portland, count=1)
+        sheet = self.sheet()
+        notice = sheet.cell(row=1, column=1)
+
+        self.assertEqual(notice.value, "Formula not applied on this sheet")
+        self.assertTrue(notice.font.bold)
+        self.assertGreaterEqual(notice.font.size, 16)
+        self.assertIn("A1:R1", {str(merged) for merged in sheet.merged_cells.ranges})
+        self.assertEqual(sheet.cell(row=2, column=1).value, "Exporter")
+
     def test_the_json_document_carries_what_the_sheet_does(self):
         """One builder feeds both, so the PDF and the .xlsx cannot drift."""
         services.apply_step(self.order, self.tpl, self.portland, count=1)
