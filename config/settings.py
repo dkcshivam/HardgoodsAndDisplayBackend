@@ -151,14 +151,22 @@ USE_S3 = bool(AWS_STORAGE_BUCKET_NAME)
 
 # Credentials are not settings: boto3 reads AWS_ACCESS_KEY_ID and
 # AWS_SECRET_ACCESS_KEY from the environment, or a server role if it has one.
+AWS_REGION = env("AWS_REGION", "ap-south-1")
 S3_MEDIA = {
     "bucket_name": AWS_STORAGE_BUCKET_NAME,
-    "region_name": env("AWS_REGION", "ap-south-1"),
+    "region_name": AWS_REGION,
     "location": "media",
-    # The bucket policy makes media/ public, so plain URLs: a signed one
-    # would expire, and the frontend keeps image URLs around.
-    "querystring_auth": False,
-    # New buckets refuse per-object ACLs; the policy is what grants reads.
+    # The bucket is private: every image URL is signed, and stops working
+    # after this long. The API hands out fresh ones on every read, so only a
+    # page left open for longer than this shows broken images.
+    "querystring_auth": True,
+    "querystring_expire": int(env("AWS_S3_URL_EXPIRE_SECONDS", str(24 * 60 * 60))),
+    "signature_version": "s3v4",
+    # The regional host: ap-south-1 accepts only v4 signatures, which the
+    # global s3.amazonaws.com host can reject for a bucket outside us-east-1.
+    "endpoint_url": f"https://s3.{AWS_REGION}.amazonaws.com",
+    "addressing_style": "virtual",
+    # New buckets refuse per-object ACLs; access is the bucket's and IAM's.
     "default_acl": None,
     # A second photo with the same file name keeps both, as on disk.
     "file_overwrite": False,
@@ -177,8 +185,8 @@ STORAGES = {
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
 
-# Where `manage.py backup_database` puts its dumps: a private bucket, never
-# the public media one.
+# Where `manage.py backup_database` puts its dumps, under database/. Always a
+# private bucket; it can be the media bucket, which is private too.
 AWS_BACKUP_BUCKET_NAME = env("AWS_BACKUP_BUCKET_NAME")
 
 # Tests store uploads on local disk even where S3 is configured.
