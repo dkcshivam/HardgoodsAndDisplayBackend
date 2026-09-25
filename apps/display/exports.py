@@ -17,6 +17,7 @@ from io import BytesIO
 
 from openpyxl import Workbook
 
+from apps.common import export_header
 from apps.common import invoice_sheet as invoice_kit
 from apps.common import packing_sheet as sheet_kit
 
@@ -55,6 +56,7 @@ LAYOUT = sheet_kit.Layout(
         "G.W. (kg)",
         "CBM",
     },
+    header=export_header.Grid(left=5, split=2, middle=11, beside=8, labels=13, last=18),
 )
 
 

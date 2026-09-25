@@ -163,7 +163,7 @@ CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 
 # ── Export documents (Packing List & Invoice) ─────────────────────────
 
-PACKING_LIST_HEADER = {
+EXPORT_DOCUMENT_HEADER = {
     # If True, highlights static fields with yellow fill.
     # Set to False for clean white production print.
     "highlight_static": False,
