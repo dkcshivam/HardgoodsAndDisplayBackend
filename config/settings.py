@@ -170,10 +170,10 @@ EXPORT_DOCUMENT_HEADER = {
     # Exporter details (static)
     "exporter": [
         "DKC EXPORTS PVT. LTD.",
-        "A-4, SHIV MARG,GREEN AVN. , CHURCH ROAD",
+        "A-4, SHIV MARG,GREEN AVN., CHURCH ROAD",
         "VASANT KUNJ , NEW DELHI 110070",
         "INDIA",
-        "Tel- + 9111 26124358",
+        "Tel- + 91 11 26124358",
     ],
     # Importer-Exporter Code (static). The invoice captions it "IEC CODE",
     # the packing list "Exporter's Ref No"; both print "IEC No <code>".
@@ -197,8 +197,10 @@ EXPORT_DOCUMENT_HEADER = {
         ("SQC", "PCS"),
         ("Pref. Agreements", "GSTP"),
         ("GST Comp. Cess", "N/A"),
-        ("STATEMENT TYPE = DEC", "0"),
-        ("STATEMENT CODE = RD001", "0"),
+        # Complete statements on their own; the desk's invoice leaves the
+        # value column beside them empty.
+        ("STATEMENT TYPE = DEC", ""),
+        ("STATEMENT CODE = RD001", ""),
     ],
     # Origin and transport defaults (static)
     "country_of_origin": "INDIA",
