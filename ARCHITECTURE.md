@@ -1113,6 +1113,11 @@ the list the shipping desk made by hand (`PL 001.xlsx`), which also asked for
 a `Total No of Boxes` column and each box's sides in inches beside
 centimetres. The CBM is worked from the centimetres printed.
 
+`Total Qty` sits beside `Qty / Box`: that style's quantity across every box
+the row stands for (4 a box × 3 boxes prints 12). Unlike the box's own
+figures it prints on each style's row of a mixed box. The order total puts
+the shipment's quantity under `Total Qty` and leaves `Qty / Box` blank.
+
 The grouping and the carton-range notation are shared with Hardgoods in
 `apps/common/packing_sheet.py`; the columns are Display's own
 (`exports.LAYOUT`), and so is the numbering (§10.6) — the box numbers in

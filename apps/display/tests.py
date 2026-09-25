@@ -685,7 +685,7 @@ class DisplayPackingListTests(APITestCase):
             header,
             [
                 "Carton Nos", "Total No of Boxes", "Store No", "Style No",
-                "Customs Description", "Qty / Box", "Units", "NNW (kg)",
+                "Customs Description", "Qty / Box", "Total Qty", "Units", "NNW (kg)",
                 "N.W. (kg)", "G.W. (kg)", "L (in)", "W (in)", "H (in)",
                 "L (cm)", "W (cm)", "H (cm)", "CBM",
             ],
@@ -757,7 +757,17 @@ class DisplayPackingListTests(APITestCase):
         self.assertEqual(self.column("Style No"), ["DSP-BOW-12", "DSP-TRE-60"])
         header, _, total = self.table()
         self.assertEqual(total[header.index("Total No of Boxes")], 3)
-        self.assertEqual(total[header.index("Qty / Box")], 36)
+        self.assertEqual(total[header.index("Total Qty")], 36)
+
+    def test_total_qty_is_each_style_across_the_run(self):
+        """Every style's row, not just the one that opens the box."""
+        self.mixed_step(trees_per_box=2, count=3)
+
+        self.assertEqual(self.column("Qty / Box"), [10, 2])
+        self.assertEqual(self.column("Total Qty"), [30, 6])
+        header, _, total = self.table()
+        self.assertEqual(total[header.index("Total Qty")], 36)
+        self.assertIsNone(total[header.index("Qty / Box")])
 
     def test_a_different_mix_keeps_its_own_row(self):
         self.mixed_step(trees_per_box=2, count=2)
@@ -794,7 +804,7 @@ class DisplayPackingListTests(APITestCase):
 
         header, _, total = self.table()
         self.assertEqual(total[0], "ORDER TOTAL · all 2 boxes")
-        self.assertEqual(total[header.index("Qty / Box")], 60)
+        self.assertEqual(total[header.index("Total Qty")], 60)
         self.assertEqual(total[header.index("Total No of Boxes")], 2)
 
     def test_every_store_reads_as_one_unbroken_ascending_run(self):

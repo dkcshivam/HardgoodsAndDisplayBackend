@@ -347,6 +347,7 @@ class Totals:
             "Cartons": self.cartons,
             "Total No of Boxes": self.cartons,
             "Qty / Box": self.quantity,
+            "Total Qty": self.quantity,
             "NNW (kg)": self.nnw_kg,
             "N.W. (kg)": self.net_kg,
             "G.W. (kg)": self.gross_kg,

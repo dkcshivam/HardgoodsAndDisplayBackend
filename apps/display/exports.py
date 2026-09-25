@@ -36,6 +36,7 @@ LAYOUT = sheet_kit.Layout(
         ("Style No", 18, None),
         ("Customs Description", 34, None),
         ("Qty / Box", 9, "0"),
+        ("Total Qty", 9, "0"),
         ("Units", 8, None),
         ("NNW (kg)", 11, "0.000"),
         ("N.W. (kg)", 11, "0.000"),
@@ -48,15 +49,17 @@ LAYOUT = sheet_kit.Layout(
         ("H (cm)", 9, "0.00"),
         ("CBM", 10, "0.0000"),
     ],
+    # The shipment's quantity goes under Total Qty; one box's figures add up
+    # to nothing, so Qty / Box is left blank.
     totalled={
         "Total No of Boxes",
-        "Qty / Box",
+        "Total Qty",
         "NNW (kg)",
         "N.W. (kg)",
         "G.W. (kg)",
         "CBM",
     },
-    header=export_header.Grid(left=4, split=1, middle=10, beside=7, labels=12, last=17),
+    header=export_header.Grid(left=4, split=1, middle=11, beside=8, labels=13, last=18),
 )
 
 
@@ -68,13 +71,18 @@ def packing_list_filename(order: DisplayOrder) -> str:
     return f"packing-list-{order.number}.xlsx"
 
 
-def _for_sheet(store_no, sample, values: list, opens: bool) -> list:
+def _for_sheet(store_no, group, values: list, opens: bool) -> list:
     """
     A canonical row from the shared kit, laid out in Display's columns. The
     inches are the box's own; the centimetres are the kit's, converted from
     them, and the CBM is worked from those centimetres.
+
+    Total Qty is the style's quantity across every box the row stands for,
+    so unlike the box's own figures it prints on each style's row.
     """
-    label, count, *item, length_cm, width_cm, height_cm, cbm = values
+    label, count, style_no, description, per_box, *rest = values
+    *units_and_weights, length_cm, width_cm, height_cm, cbm = rest
+    sample = group.cartons[0]
     inches = (
         [sample.length_in, sample.width_in, sample.height_in] if opens else [None] * 3
     )
@@ -82,7 +90,11 @@ def _for_sheet(store_no, sample, values: list, opens: bool) -> list:
         label,
         count,
         store_no,
-        *item,
+        style_no,
+        description,
+        per_box,
+        None if per_box is None else per_box * len(group.cartons),
+        *units_and_weights,
         *inches,
         length_cm,
         width_cm,
@@ -123,7 +135,7 @@ def packing_document(order: DisplayOrder) -> sheet_kit.Document:
                 # Named once, where its run starts, as the hand-made list does.
                 store_no = _store_no(store) if not rows else None
                 rows.append(
-                    (_for_sheet(store_no, group.cartons[0], values, opens), opens)
+                    (_for_sheet(store_no, group, values, opens), opens)
                 )
 
         blocks.append(sheet_kit.Block(rows=rows))
