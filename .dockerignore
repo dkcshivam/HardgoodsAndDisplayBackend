@@ -7,3 +7,10 @@ db.sqlite3
 media/
 staticfiles/
 .pytest_cache/
+# Never in an image: history, local tooling, and database dumps kept beside the code.
+.git
+.claude/
+backups/
+pgdata_export*
+*.dump
+*.sql

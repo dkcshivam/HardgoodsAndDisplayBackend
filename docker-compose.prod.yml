@@ -24,6 +24,10 @@ services:
       retries: 10
 
   backend:
+    # Named apart from the dev image, which the development compose builds
+    # under this project's default name; sharing it would let either setup
+    # start the other's image.
+    image: dkc-packing-backend:prod
     build:
       context: .
       target: prod
