@@ -24,9 +24,14 @@ CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
 
 FROM base AS prod
+# media/ is made here so the volume mounted over it starts out owned by app;
+# an empty one Docker creates itself is root's, and uploads would fail.
 RUN DJANGO_SECRET_KEY=build-only python manage.py collectstatic --noinput \
+    && mkdir -p /app/media \
     && useradd --create-home --uid 1000 app \
     && chown -R app /app
 USER app
 EXPOSE 8000
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60"]
+# Threads, because images are served from here too and a worker would
+# otherwise sit on each download.
+CMD ["sh", "-c", "python manage.py migrate --noinput && exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 4 --timeout 120 --access-logfile -"]

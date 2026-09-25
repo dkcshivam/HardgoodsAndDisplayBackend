@@ -5,6 +5,7 @@ See .env.example for the full list.
 
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 import os
 
@@ -27,9 +28,21 @@ def env_list(key: str, default: str = "") -> list[str]:
 
 # ── Core ─────────────────────────────────────────────────────────────
 
-SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-insecure-key-change-me")
-DEBUG = env_bool("DJANGO_DEBUG", True)
+DEV_SECRET_KEY = "dev-only-insecure-key-change-me"
+SECRET_KEY = env("DJANGO_SECRET_KEY", DEV_SECRET_KEY)
+# Off unless asked for: a server started without its environment should fail
+# safe, not hand tracebacks and settings to whoever hits an error page.
+DEBUG = env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+
+if not DEBUG and SECRET_KEY in {"", DEV_SECRET_KEY}:
+    raise ImproperlyConfigured(
+        "Set DJANGO_SECRET_KEY. The development key is public, and DEBUG is off."
+    )
+
+# Only the admin uses sessions — the app has no login. Turn these on when the
+# admin is reached over https.
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = env_bool("DJANGO_SECURE_COOKIES", False)
 
 # Behind a TLS-terminating proxy — a tunnel, or any real deployment — the
 # request arrives as plain http, so image URLs would come back http:// and a
@@ -126,7 +139,8 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Local disk in development; needs an object store before deployment.
+# Local disk, served by Django itself (see urls.py). In production this is a
+# Docker volume, so uploads outlive the container.
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
@@ -145,10 +159,29 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 50,
     # Without this every weight arrives in the frontend as "0.600" and needs parsing.
     "COERCE_DECIMAL_TO_STRING": False,
-    "DEFAULT_RENDERER_CLASSES": [
-        "rest_framework.renderers.JSONRenderer",
-        "rest_framework.renderers.BrowsableAPIRenderer",
-    ],
+    # The browsable API is a development aid; in production it would put an
+    # edit form for every record in front of anyone who opens an API URL.
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"]
+    + (["rest_framework.renderers.BrowsableAPIRenderer"] if DEBUG else []),
+}
+
+
+# ── Logging ──────────────────────────────────────────────────────────
+
+# Django prints request errors to the console only while DEBUG is on. With it
+# off they would go to admin email, which is not set up, so a 500 in
+# production would leave no trace in `docker logs`.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": env("DJANGO_LOG_LEVEL", "INFO"),
+            "propagate": False,
+        },
+    },
 }
 
 

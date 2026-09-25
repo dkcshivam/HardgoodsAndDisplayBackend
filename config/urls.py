@@ -1,7 +1,7 @@
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
 from rest_framework.routers import DefaultRouter
 
 from apps.catalog.views import ProductImageViewSet, ProductViewSet
@@ -34,8 +34,16 @@ urlpatterns = [
     path("api/auth/", include("rest_framework.urls")),  # browsable API login
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Product images, and in production the admin's CSS, are served by Django
+# itself: for a handful of users that is simpler than a separate file server.
+# With DEBUG on, runserver already serves static files.
+urlpatterns += [
+    re_path(r"^media/(?P<path>.*)$", serve, {"document_root": settings.MEDIA_ROOT}),
+]
+if not settings.DEBUG:
+    urlpatterns += [
+        re_path(r"^static/(?P<path>.*)$", serve, {"document_root": settings.STATIC_ROOT}),
+    ]
 
 admin.site.site_header = "DKC Packing"
 admin.site.site_title = "DKC Packing"
