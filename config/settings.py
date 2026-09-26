@@ -141,13 +141,9 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Uploaded images. Naming a bucket moves them to S3; without one (development,
-# tests) they stay on local disk, served by Django itself (see urls.py).
-MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
-
+# Uploaded images live in S3 everywhere, development included: the server
+# keeps nothing on disk. Tests swap in a temporary folder of their own.
 AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME")
-USE_S3 = bool(AWS_STORAGE_BUCKET_NAME)
 
 # Credentials are not settings: boto3 reads AWS_ACCESS_KEY_ID and
 # AWS_SECRET_ACCESS_KEY from the environment, or a server role if it has one.
@@ -177,16 +173,9 @@ if endpoint := env("AWS_S3_ENDPOINT_URL"):
     S3_MEDIA |= {"endpoint_url": endpoint, "addressing_style": "path"}
 
 STORAGES = {
-    "default": (
-        {"BACKEND": "storages.backends.s3.S3Storage", "OPTIONS": S3_MEDIA}
-        if USE_S3
-        else {"BACKEND": "django.core.files.storage.FileSystemStorage"}
-    ),
+    "default": {"BACKEND": "storages.backends.s3.S3Storage", "OPTIONS": S3_MEDIA},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
-
-# Tests store uploads on local disk even where S3 is configured.
-TEST_RUNNER = "config.test_runner.LocalStorageRunner"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

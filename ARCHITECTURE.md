@@ -1157,6 +1157,7 @@ stand for several identical boxes while printing one box's figures.
 | Units | Inches and kilograms (D4) |
 | Terminology | Section 3 is now the agreed vocabulary |
 | Orders / Packing review | Rebuilt against the confirmed terminology; reconciliation corrected (D3) |
+| Photo storage | A private S3 bucket everywhere, development included; the API returns signed URLs that expire |
 
 ### Still open
 
@@ -1176,8 +1177,6 @@ stand for several identical boxes while printing one box's figures.
    `(order, product)` is unique, so a single order cannot ask for the same style
    in two finishes. Supporting it means colour on `CartonContent` and a
    reconciliation keyed by colour as well as part.
-7. **Photo storage** — local `MEDIA_ROOT` in development; needs an object store
-   before deployment.
 
 ---
 

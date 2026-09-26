@@ -1,13 +1,12 @@
 """
 Copy uploaded images from a local folder into the configured storage — once,
-when images move to S3. The database keeps each image's path, so every file
-lands at the same path it had on disk. Safe to re-run: files already there
-are skipped.
+for a machine that kept its images on disk before they moved to S3. The
+database keeps each image's path, so every file lands at the same path it had
+on disk. Safe to re-run: files already there are skipped.
 """
 
 from pathlib import Path
 
-from django.conf import settings
 from django.core.files import File
 from django.core.files.storage import FileSystemStorage, default_storage
 from django.core.management.base import BaseCommand, CommandError
@@ -18,9 +17,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--source",
-            default=str(settings.MEDIA_ROOT),
-            help="The folder to copy from (default: MEDIA_ROOT).",
+            "--source", required=True, help="The old media/ folder to copy from."
         )
 
     def handle(self, *args, source, **options):

@@ -10,6 +10,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APITestCase
 
 from apps.common import packing_sheet as sheet_kit
+from apps.common.testing import local_storage
 from apps.masters.models import Merchant, Store
 
 from . import services
@@ -1419,7 +1420,7 @@ def upload(name="photo.gif"):
     return SimpleUploadedFile(name, PIXEL_GIF, content_type="image/gif")
 
 
-@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+@override_settings(STORAGES=local_storage(tempfile.mkdtemp()))
 class DisplayProductImageTests(APITestCase):
     """Photos hang off a display product or one of its parts, never both."""
 

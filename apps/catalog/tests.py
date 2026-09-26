@@ -5,6 +5,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
+from apps.common.testing import local_storage
+
 from .models import Product, ProductImage, ProductPart
 
 # Smallest thing Pillow will accept as an image.
@@ -107,7 +109,7 @@ class ProductShapeTests(APITestCase):
         self.assertFalse(ProductPart.objects.filter(pk=self.parts[1].pk).exists())
 
 
-@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+@override_settings(STORAGES=local_storage(tempfile.mkdtemp()))
 class ProductPhotoTests(APITestCase):
     def setUp(self):
         self.chair = Product.objects.create(style_no="CHR-01", description="Chair")

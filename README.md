@@ -25,6 +25,9 @@ docker compose exec backend python manage.py createsuperuser
 
 Stop with `docker compose down`. Your data survives; it lives in a Docker volume.
 
+Photos go to S3 even here: copy `.env.example` to `.env` and fill in the AWS
+lines, or uploads fail.
+
 ## Everyday commands
 
 ```bash

@@ -8,6 +8,8 @@ from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 from rest_framework.test import APITestCase
 
+from apps.common.testing import local_storage
+
 from .models import Store
 
 
@@ -66,16 +68,6 @@ class StoreApiTests(APITestCase):
             [row["name"] for row in results],
             ["118 Portland Pearl", "204 Austin Domain"],
         )
-
-
-def local_storage(folder) -> dict:
-    return {
-        "default": {
-            "BACKEND": "django.core.files.storage.FileSystemStorage",
-            "OPTIONS": {"location": str(folder)},
-        },
-        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
-    }
 
 
 class CopyMediaToStorageTests(TestCase):
