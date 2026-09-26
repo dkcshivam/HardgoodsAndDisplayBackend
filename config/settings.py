@@ -113,6 +113,8 @@ DATABASES = {
         "PASSWORD": env("POSTGRES_PASSWORD", ""),
         "HOST": env("POSTGRES_HOST", "localhost"),
         "PORT": env("POSTGRES_PORT", "5432"),
+        "CONNECTION_MAX_AGE": env("CONN_MAX_AGE","0"),
+        "ATOMIC_REQUESTS": env("ATOMIC_REQUESTS", "True"),
     }
 }
 
