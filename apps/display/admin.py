@@ -39,7 +39,22 @@ class DisplayProductAdmin(admin.ModelAdmin):
         "status",
     )
     list_filter = ("status", "is_multi_part", "is_delegate", "category")
-    search_fields = ("style_no", "style_name", "description")
+    # As for hardgoods: a multi-part product's customs codes live on its parts.
+    search_fields = (
+        "style_no",
+        "style_name",
+        "description",
+        "customs_description",
+        "hsn_code",
+        "hts_code",
+        "parts__name",
+        "parts__hsn_code",
+        "parts__hts_code",
+    )
+    search_help_text = (
+        "Search by style no, name, description, or an HSN/HTS code — "
+        "the product's own or any of its parts'."
+    )
     readonly_fields = ("created_at", "updated_at")
     inlines = [DisplayProductPartInline]
 
@@ -106,7 +121,14 @@ class PackTemplateAdmin(admin.ModelAdmin):
         "is_active",
     )
     list_filter = ("is_library", "is_active", "merchant")
-    search_fields = ("code", "name")
+    search_fields = (
+        "code",
+        "name",
+        "merchant__code",
+        "merchant__name",
+        "items__product__style_no",
+    )
+    search_help_text = "Search by code, name, merchant, or a style the box holds."
     readonly_fields = ("created_at", "updated_at")
     inlines = [PackTemplateItemInline]
 
@@ -146,7 +168,19 @@ class PackStepInline(admin.TabularInline):
 class DisplayOrderAdmin(admin.ModelAdmin):
     list_display = ("number", "name", "merchant", "status", "carton_count", "created_at")
     list_filter = ("status", "merchant")
-    search_fields = ("number", "name", "buyer_name")
+    search_fields = (
+        "number",
+        "name",
+        "buyer_name",
+        "merchant__code",
+        "merchant__name",
+        "lines__store__name",
+        "lines__product__style_no",
+    )
+    search_help_text = (
+        "Search by order number, name, buyer, merchant, or a store or style "
+        "on the order."
+    )
     readonly_fields = ("number", "created_at", "updated_at")
     inlines = [DisplayOrderLineInline, PackStepInline]
 
@@ -187,7 +221,17 @@ class DisplayCartonAdmin(admin.ModelAdmin):
         "cbm",
     )
     list_filter = ("order", "store")
-    search_fields = ("carton_no", "order__number")
+    search_fields = (
+        "carton_no",
+        "order__number",
+        "store__name",
+        "step__template__code",
+        "contents__product__style_no",
+    )
+    search_help_text = (
+        "Search by carton no, order number, store, template code, or a style "
+        "packed in it."
+    )
     inlines = [DisplayCartonContentInline]
 
     @admin.display(description="template")

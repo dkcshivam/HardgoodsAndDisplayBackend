@@ -49,6 +49,8 @@ class ProductAdmin(admin.ModelAdmin):
         "status",
     )
     list_filter = ("status", "is_multi_part", "is_delegate", "category")
+    # A multi-part product keeps its customs codes on the parts, so a code
+    # search has to look there too to find it.
     search_fields = (
         "style_no",
         "style_name",
@@ -56,6 +58,13 @@ class ProductAdmin(admin.ModelAdmin):
         "customs_description",
         "hsn_code",
         "hts_code",
+        "parts__name",
+        "parts__hsn_code",
+        "parts__hts_code",
+    )
+    search_help_text = (
+        "Search by style no, name, description, or an HSN/HTS code — "
+        "the product's own or any of its parts'."
     )
     inlines = [ProductImageInline, ProductPartInline]
     readonly_fields = ("derived", "created_at", "updated_at")
@@ -142,5 +151,13 @@ class ProductAdmin(admin.ModelAdmin):
 @admin.register(ProductPart)
 class ProductPartAdmin(admin.ModelAdmin):
     list_display = ("product", "name", "net_weight_kg", "gross_weight_kg", "cbm")
-    search_fields = ("name", "product__style_no", "hsn_code", "hts_code")
+    search_fields = (
+        "name",
+        "product__style_no",
+        "product__style_name",
+        "customs_description",
+        "hsn_code",
+        "hts_code",
+    )
+    search_help_text = "Search by part name, its product's style, or an HSN/HTS code."
     inlines = [ProductImageInline]

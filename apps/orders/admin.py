@@ -14,7 +14,17 @@ class OrderLineInline(admin.TabularInline):
 class OrderAdmin(admin.ModelAdmin):
     list_display = ("number", "name", "merchant", "status", "carton_count", "created_at")
     list_filter = ("status", "merchant")
-    search_fields = ("number", "name", "buyer_name")
+    search_fields = (
+        "number",
+        "name",
+        "buyer_name",
+        "merchant__code",
+        "merchant__name",
+        "lines__product__style_no",
+    )
+    search_help_text = (
+        "Search by order number, name, buyer, merchant, or a style on the order."
+    )
     readonly_fields = ("number", "created_at", "updated_at")
     inlines = [OrderLineInline]
 
@@ -52,7 +62,8 @@ class CartonAdmin(admin.ModelAdmin):
         "cbm",
     )
     list_filter = ("order",)
-    search_fields = ("carton_no", "order__number")
+    search_fields = ("carton_no", "order__number", "contents__product__style_no")
+    search_help_text = "Search by carton no, order number, or a style packed in it."
     inlines = [CartonContentInline]
 
     @admin.display(description="size (L × W × H in)")

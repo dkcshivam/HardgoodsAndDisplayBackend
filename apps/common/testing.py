@@ -1,5 +1,9 @@
 def local_storage(folder) -> dict:
-    """STORAGES that keep uploads in a folder, so no test ever writes to S3."""
+    """
+    STORAGES that keep uploads in a folder, so no test ever writes to S3, and
+    serve static files unhashed: tests never run collectstatic, so the
+    manifest WhiteNoise reads would not exist for a page that renders.
+    """
     return {
         "default": {
             "BACKEND": "django.core.files.storage.FileSystemStorage",
