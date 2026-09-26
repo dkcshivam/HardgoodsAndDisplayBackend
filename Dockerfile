@@ -24,16 +24,13 @@ CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
 
 FROM base AS prod
-# media/ is made here so the volume mounted over it starts out owned by app;
-# an empty one Docker creates itself is root's, and uploads would fail.
 RUN DJANGO_SECRET_KEY=build-only python manage.py collectstatic --noinput \
-    && mkdir -p /app/media \
     && useradd --create-home --uid 1000 app \
     && chown -R app /app
 USER app
 EXPOSE 8000
-# Threads, because images are served from here too and a worker would
-# otherwise sit on each download. The frontend's proxy reuses connections,
-# and gunicorn's default 2 s keep-alive closed them under it often enough to
-# surface as a 500 now and then; 75 s is nginx's default.
+# Threads, because a photo upload holds its worker while it is passed on to
+# S3. The frontend's proxy reuses connections, and gunicorn's default 2 s
+# keep-alive closed them under it often enough to surface as a 500 now and
+# then; 75 s is nginx's default.
 CMD ["sh", "-c", "python manage.py migrate --noinput && exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 4 --timeout 120 --keep-alive 75 --access-logfile -"]

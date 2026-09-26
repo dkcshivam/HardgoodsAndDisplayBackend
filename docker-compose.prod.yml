@@ -1,28 +1,11 @@
-# Production: gunicorn with DEBUG off, the database and uploaded images on
-# volumes, and every service restarted if it stops. Secrets come from a .env
-# beside this file; DEPLOY.md lists them and walks through the rest.
-#
-#   docker compose -f docker-compose.prod.yml up -d --build
+# Production, as Coolify deploys it: gunicorn with DEBUG off, the database on
+# Amazon RDS and images on S3, so the container keeps nothing of its own.
+# Restarts, the domain and HTTPS are Coolify's; secrets are set in its
+# environment variables. DEPLOY.md lists them and walks through the rest.
 
 name: dkc-packing-backend
 
 services:
-  db:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-dkc_packing}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-    # No published port: only the API talks to the database.
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   backend:
     # Named apart from the dev image, which the development compose builds
     # under this project's default name; sharing it would let either setup
@@ -31,38 +14,28 @@ services:
     build:
       context: .
       target: prod
-    restart: unless-stopped
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       DJANGO_DEBUG: "False"
-      # The public hostname, plus `backend` for requests from the frontend.
+      # Both public hostnames: the admin's, and the app's, which the
+      # frontend forwards on.
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS in .env}
       DJANGO_SECURE_COOKIES: ${DJANGO_SECURE_COOKIES:-False}
+      DJANGO_LOG_LEVEL: ${DJANGO_LOG_LEVEL:-ERROR}
+      # The RDS instance's endpoint and master credentials.
+      POSTGRES_HOST: ${POSTGRES_HOST:?Set POSTGRES_HOST in .env}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_DB: ${POSTGRES_DB:-dkc_packing}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       # Empty is right when the frontend proxies /api, as its production
       # compose does: the browser then never calls this origin itself.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
-      # Images go to S3 once a bucket is named, and the nightly backup to
-      # the private one. Without them images stay on the media volume below.
-      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-}
-      AWS_BACKUP_BUCKET_NAME: ${AWS_BACKUP_BUCKET_NAME:-}
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:?Set AWS_STORAGE_BUCKET_NAME in .env}
       AWS_REGION: ${AWS_REGION:-ap-south-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-    volumes:
-      - media:/app/media
-    ports:
-      # Loopback only. The frontend reaches the API over Docker's network;
-      # this port is for the admin, from the server itself.
-      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-
-volumes:
-  pgdata:
-  media:
+      AWS_S3_URL_EXPIRE_SECONDS: ${AWS_S3_URL_EXPIRE_SECONDS:-86400}
+    # No published port: Coolify's proxy reaches it over Docker's network.
+    expose:
+      - "8000"

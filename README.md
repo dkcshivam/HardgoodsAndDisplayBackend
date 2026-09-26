@@ -42,8 +42,8 @@ Migrations run automatically every time the container starts.
 ## Production
 
 `docker compose up -d` is the development setup: Django's dev server with
-DEBUG on. Production has its own compose file in each repo — see
-[DEPLOY.md](DEPLOY.md).
+DEBUG on. Production runs in Coolify from each repo's own compose file, with
+the database on Amazon RDS — see [DEPLOY.md](DEPLOY.md).
 
 ## What is where
 
