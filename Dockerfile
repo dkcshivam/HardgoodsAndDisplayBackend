@@ -12,12 +12,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# pg_dump, for `manage.py backup_database`. Debian 13 ships version 17, the
-# same as the database; an older one refuses to dump a newer server.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev
 

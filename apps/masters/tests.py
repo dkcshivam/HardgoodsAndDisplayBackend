@@ -108,10 +108,3 @@ class CopyMediaToStorageTests(TestCase):
     def test_it_refuses_to_copy_a_folder_onto_itself(self):
         with self.assertRaisesMessage(CommandError, "AWS_STORAGE_BUCKET_NAME"):
             self.copy(self.source)
-
-
-class BackupDatabaseTests(TestCase):
-    @override_settings(AWS_BACKUP_BUCKET_NAME="")
-    def test_it_needs_the_private_bucket_named(self):
-        with self.assertRaisesMessage(CommandError, "AWS_BACKUP_BUCKET_NAME"):
-            call_command("backup_database")

@@ -185,10 +185,6 @@ STORAGES = {
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
 
-# Where `manage.py backup_database` puts its dumps, under database/. Always a
-# private bucket; it can be the media bucket, which is private too.
-AWS_BACKUP_BUCKET_NAME = env("AWS_BACKUP_BUCKET_NAME")
-
 # Tests store uploads on local disk even where S3 is configured.
 TEST_RUNNER = "config.test_runner.LocalStorageRunner"
 
