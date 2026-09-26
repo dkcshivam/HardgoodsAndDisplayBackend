@@ -1,7 +1,11 @@
 from rest_framework import viewsets
 
 from .models import Product, ProductImage
-from .serializers import ProductImageSerializer, ProductListSerializer, ProductSerializer
+from .serializers import (
+    ProductImageSerializer,
+    ProductListSerializer,
+    ProductSerializer,
+)
 
 
 class ProductViewSet(viewsets.ModelViewSet):
@@ -47,7 +51,9 @@ class ProductImageViewSet(viewsets.ModelViewSet):
         }
         first = not ProductImage.objects.filter(**owner).exists()
         # The first photo of an owner is its main one until told otherwise.
-        serializer.save(is_main=serializer.validated_data.get("is_main", False) or first)
+        serializer.save(
+            is_main=serializer.validated_data.get("is_main", False) or first
+        )
 
     def perform_destroy(self, instance):
         instance.image.delete(save=False)

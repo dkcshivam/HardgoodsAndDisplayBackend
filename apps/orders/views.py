@@ -216,7 +216,9 @@ class OrderViewSet(viewsets.ModelViewSet):
             carton = Carton.objects.create(order=order, **carton_data)
             CartonContent.objects.bulk_create(
                 [
-                    CartonContent(carton=carton, **{k: v for k, v in content.items() if k != "id"})
+                    CartonContent(
+                        carton=carton, **{k: v for k, v in content.items() if k != "id"}
+                    )
                     for content in contents
                 ]
             )

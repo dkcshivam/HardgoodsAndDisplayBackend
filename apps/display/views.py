@@ -364,10 +364,7 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
             {
                 **self._plan(order, source.id),
                 "replicated_to": StoreRefSerializer(
-                    [
-                        {"store": s.id, "store_name": s.name}
-                        for s in copied
-                    ],
+                    [{"store": s.id, "store_name": s.name} for s in copied],
                     many=True,
                 ).data,
             }
@@ -463,9 +460,7 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _plan(order, store_id=None):
-        return PackingPlanSerializer(
-            services.packing_summary(order, store_id)
-        ).data
+        return PackingPlanSerializer(services.packing_summary(order, store_id)).data
 
     def _requested_store(self, request, order):
         """
@@ -479,6 +474,8 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
             store_id = int(raw)
         except ValueError:
             return None
-        return store_id if any(
-            line.store_id == store_id for line in order.lines.all()
-        ) else None
+        return (
+            store_id
+            if any(line.store_id == store_id for line in order.lines.all())
+            else None
+        )
