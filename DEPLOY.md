@@ -12,7 +12,7 @@ code mounted from disk).
 | Piece | Where | What it is |
 |---|---|---|
 | Database | Amazon RDS | Postgres 17. RDS keeps its automated backups. |
-| `backend` | this repo, in Coolify | Django under gunicorn, DEBUG off. Runs migrations on start. Serves `/api` and `/admin` on port 8000, published nowhere: only Coolify's proxy and the frontend reach it. |
+| `backend` | this repo, in Coolify | Django under gunicorn, DEBUG off. Runs migrations on start. Serves `/api` and `/admin` on port 8000 — the admin's CSS and JS too, through WhiteNoise — published nowhere: only Coolify's proxy and the frontend reach it. |
 | `frontend` | frontend repo, in Coolify | The compiled Next.js app. Forwards `/api` to the backend's address, so the browser only ever talks to this. |
 | Images | Amazon S3 | A **private** bucket. Django uploads them, and every image URL the API returns is signed and expires (24 hours by default). |
 

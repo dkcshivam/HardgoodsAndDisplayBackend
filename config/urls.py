@@ -1,7 +1,5 @@
-from django.conf import settings
 from django.contrib import admin
-from django.urls import include, path, re_path
-from django.views.static import serve
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from apps.catalog.views import ProductImageViewSet, ProductViewSet
@@ -34,13 +32,8 @@ urlpatterns = [
     path("api/auth/", include("rest_framework.urls")),  # browsable API login
 ]
 
-# In production the admin's CSS is served by Django itself: for a handful of
-# users that is simpler than a separate file server. Images come straight from
-# S3. With DEBUG on, runserver already serves static files.
-if not settings.DEBUG:
-    urlpatterns += [
-        re_path(r"^static/(?P<path>.*)$", serve, {"document_root": settings.STATIC_ROOT}),
-    ]
+# No static route: WhiteNoise answers /static/ from its middleware, and images
+# come straight from S3.
 
 admin.site.site_header = "DKC Packing"
 admin.site.site_title = "DKC Packing"

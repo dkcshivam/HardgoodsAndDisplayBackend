@@ -74,6 +74,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # must sit above CommonMiddleware
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # the admin's CSS and JS
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -174,7 +175,11 @@ if endpoint := env("AWS_S3_ENDPOINT_URL"):
 
 STORAGES = {
     "default": {"BACKEND": "storages.backends.s3.S3Storage", "OPTIONS": S3_MEDIA},
-    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    # Hashed names, so browsers can cache the admin's files forever and still
+    # pick up a new version the moment it ships.
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    },
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
