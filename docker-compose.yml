@@ -11,6 +11,7 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -43,6 +44,17 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  # A web page for browsing the database: http://localhost:8080, system
+  # PostgreSQL, server db. Development only — it logs in as whoever asks.
+  adminer:
+    image: adminer:5
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - db
 
 volumes:
   pgdata:

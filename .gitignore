@@ -6,6 +6,9 @@ venv/
 db.sqlite3
 media/
 staticfiles/
+# Database dumps: a full copy of the data, never for the repo.
+backups/
+*.dump
 
 .env
 .env.*
