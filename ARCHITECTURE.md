@@ -485,10 +485,15 @@ The footer is **not** a column sum. A row standing for twelve identical boxes
 prints one box's figures, so the totals multiply each row by its run: they are
 computed values, not `SUM()` formulas. Dimensions are deliberately not totalled.
 
-`Customs Description` takes the content's own wording, then the piece's
-`customs_description`, then its style name — a blank here is a document a
-broker cannot clear. It prints in capitals whatever case the catalogue holds,
-here and on the invoice, in the sheet and on the print page alike.
+`Customs Description` is customs wording only, never the everyday
+`description` each content records when it is packed. A part's row takes the
+part's `customs_description`; any other row takes the product's — the words
+the invoice prints for that style, from the same function, so the two
+documents agree. Where none was entered it falls back to the style name, the
+description, then the style no (a part's to the product's, with the part's
+name) — a blank here is a document a broker cannot clear. It prints in
+capitals whatever case the catalogue holds, here and on the invoice, in the
+sheet and on the print page alike.
 
 Available as soon as cartons exist — a draft list is what the floor works from
 while the order is packed — and built from what is **stored**, so the screen

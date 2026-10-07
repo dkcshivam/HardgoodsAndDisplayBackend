@@ -876,13 +876,16 @@ class DisplayPackingListTests(APITestCase):
 
         self.assertEqual(self.column("Store No"), [118])
 
-    def test_descriptions_print_in_capitals_however_they_were_typed(self):
+    def test_both_documents_print_the_customs_wording_in_capitals(self):
+        # Not the everyday description, though each box records that too.
         DisplayProduct.objects.filter(pk=self.bow.pk).update(
             description="velvet bow", customs_description="100% polyester decorative bow"
         )
         services.apply_step(self.order, self.tpl, self.portland, count=1)
 
-        self.assertEqual(self.column("Customs Description"), ["VELVET BOW"])
+        self.assertEqual(
+            self.column("Customs Description"), ["100% POLYESTER DECORATIVE BOW"]
+        )
         invoice_row = next(
             row for row in self.sheet("invoice").iter_rows(values_only=True)
             if row[1] == "DSP-BOW-12"

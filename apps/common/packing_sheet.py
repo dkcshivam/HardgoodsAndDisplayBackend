@@ -364,28 +364,35 @@ class Totals:
 
 def describe(content) -> str:
     """
-    The customs wording where there is any, and the nearest thing to it where
-    there is not. A blank cell here is a document a broker cannot clear, and
-    a Display product often carries only a style name.
+    The customs wording of what is in the box: a part's own where the box
+    holds a part, otherwise the product's — the very words the invoice prints
+    for the style. Never the content's `description`: that is the catalogue's
+    everyday name, stamped when the box was packed.
 
     Always in capitals, however the catalogue typed it, so a column mixing
     customs wording with style names still reads as one hand.
     """
-    if content.description:
-        wording = content.description
-    elif content.part_id:
+    product = content.product
+    if content.part_id:
         part = content.part
-        wording = part.customs_description or f"{_names(content.product)} — {part.name}"
+        # Named, so a top and its legs never read as the same box.
+        wording = part.customs_description or f"{customs_wording(product)} — {part.name}"
     else:
-        wording = _names(content.product)
+        wording = customs_wording(product)
     return wording.upper()
 
 
-def _names(product) -> str:
+def customs_wording(product) -> str:
+    """
+    The customs description, and the nearest thing to it where there is none:
+    a blank cell is a document a broker cannot clear, and a Display product
+    often carries only a style name.
+    """
     return (
         product.customs_description
-        or getattr(product, "style_name", "")
+        or product.style_name
         or product.description
+        or product.style_no
     )
 
 

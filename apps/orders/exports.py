@@ -119,7 +119,7 @@ def invoice_document(order: Order) -> invoice_kit.Document:
             product.id,
             style_no=product.style_no,
             hts_code=_hts(product),
-            description=_customs(product),
+            description=sheet_kit.customs_wording(product),
             quantity=reconciled.packed,
             net_weight_kg=_unit_weight(product) * reconciled.packed,
             rate=line.rate_usd,
@@ -157,15 +157,6 @@ def _hts(product) -> str:
     if product.hts_code:
         return product.hts_code
     return next((part.hts_code for part in product.parts.all() if part.hts_code), "")
-
-
-def _customs(product) -> str:
-    return (
-        product.customs_description
-        or product.style_name
-        or product.description
-        or product.style_no
-    )
 
 
 def _unit_weight(product) -> Decimal:

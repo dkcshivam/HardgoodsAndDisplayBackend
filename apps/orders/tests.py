@@ -239,6 +239,20 @@ class PackingListTests(OrderFixture):
             ["CHAIR", "TABLE — TOP", "TABLE — LEGS"],
         )
 
+    def test_rows_print_customs_wording_not_the_everyday_description(self):
+        Product.objects.filter(pk=self.chair.pk).update(
+            customs_description="Wooden dining chair"
+        )
+        ProductPart.objects.filter(product=self.table, name="Top").update(
+            customs_description="Wooden table top"
+        )
+        self.client.post(self.url("auto-pack"))
+
+        self.assertEqual(
+            [row[self.DESCRIPTION] for row in self.rows()],
+            ["WOODEN DINING CHAIR", "WOODEN TABLE TOP", "TABLE — LEGS"],
+        )
+
     def test_a_row_names_its_carton_range_and_counts_them(self):
         self.client.post(self.url("auto-pack"))
         chairs = self.rows()[0]
