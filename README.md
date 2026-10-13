@@ -13,15 +13,28 @@ Needs Docker Desktop running.
 docker compose up -d
 ```
 
-First run only, to get sample data and a login:
+First run only, to get sample data and logins:
 
 ```bash
 docker compose exec backend python manage.py seed_demo
-docker compose exec backend python manage.py createsuperuser
+docker compose exec backend python manage.py seed_users        # the app's logins
+docker compose exec backend python manage.py createsuperuser   # your own, for /admin
 ```
 
 - API — http://localhost:8000/api
 - Admin — http://localhost:8000/admin
+
+`seed_users` makes one login per role, each with the password `demo-pass-123`.
+Re-running it puts them back as they were.
+
+| Username | Role |
+|---|---|
+| `demo-admin` | Admin — can also manage users |
+| `demo-senior` | Senior Merchant |
+| `demo-merchant` | Merchant |
+
+Every API request needs a login; see ARCHITECTURE.md §9. The demo users cannot
+open /admin — that takes a superuser, which is an admin in the app too.
 
 Stop with `docker compose down`. Your data survives; it lives in a Docker volume.
 
@@ -50,6 +63,7 @@ the database on Amazon RDS — see [DEPLOY.md](DEPLOY.md).
 | Path | What it holds |
 |---|---|
 | `apps/common/calc.py` | The maths. Source of truth for every weight and volume. |
+| `apps/accounts/` | Roles, login and the users endpoint |
 | `apps/masters/` | Categories and merchants |
 | `apps/catalog/` | Products and their parts — the packing recipes |
 | `apps/orders/` | Orders, cartons, `services.py` (the packing engine) and `exports.py` (the packing list) |

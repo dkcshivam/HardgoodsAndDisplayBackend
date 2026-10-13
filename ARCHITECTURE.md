@@ -51,7 +51,11 @@ Display module — store decor and small goods. Display differs structurally
 enough to be its own Django app with its own tables, sharing only the
 arithmetic in `apps/common`. Fully described in §10.
 
-**Not yet designed:** authentication and roles, photo editing beyond upload and
+**Sign-in** is in: every API request needs a logged-in user, and each user holds
+one of three roles (§9). What each role may do is not decided yet; until it
+is, only managing users is kept to admins.
+
+**Not yet designed:** permissions per role, photo editing beyond upload and
 set-main.
 
 ---
@@ -686,6 +690,8 @@ From `CLAUDE.md` in the design project:
 
 Base: `/api/`. DRF `PageNumberPagination`, page size 50.
 `COERCE_DECIMAL_TO_STRING = False` — decimals serialize as JSON numbers.
+Every endpoint but login and refresh needs a signed-in user — see
+[Authentication and users](#authentication-and-users).
 
 | Endpoint | Methods | Notes |
 |---|---|---|
@@ -739,7 +745,58 @@ into `/cartons/` for one run at a time.
 what remains, so the picker can show "TPL-001 · fits 36×" without a round trip
 per template.
 
-**Not yet implemented:** authentication (the API is currently open).
+### Authentication and users
+
+JWTs (djangorestframework-simplejwt), sent as `Authorization: Bearer <access>`.
+No cookies, so no CSRF: a header is never sent by a page that did not set it.
+The Django admin keeps its own session login, apart from the API's.
+
+| Endpoint | Methods | Notes |
+|---|---|---|
+| `/auth/login/` | POST | `{username, password}` → `{access, refresh, user}`. 401 on bad credentials or an inactive user; 429 past 10 tries a minute from one address |
+| `/auth/refresh/` | POST | `{refresh}` → `{access, refresh}`; the old refresh token is blacklisted. 401 if it was invalid, expired or blacklisted, or its user is inactive or has changed password since |
+| `/auth/logout/` | POST | `{refresh}` → 204, that token blacklisted. One already unusable gets 204 too |
+| `/auth/me/` | GET | the signed-in user |
+| `/auth/password/` | POST | `{current_password, new_password}` → 204, Django's password validators applied. Ends every session the user has, this one included |
+| `/users/` | GET, POST | admin only. `?search=` username, names, email; `?role=`, `?is_active=`, `?ordering=`. POST needs a `password` |
+| `/users/{id}/` | GET, PATCH, PUT | admin only. A `password` resets it; a blank one is ignored. DELETE is 405 |
+
+A user is `id, username, first_name, last_name, full_name, email, role,
+role_label, is_active, last_login, date_joined`; `full_name` falls back to the
+username, and `password` is write-only.
+
+- **Lifetimes.** Access 30 minutes, refresh 7 days. Refresh tokens rotate: each
+  refresh returns a new one and blacklists the old, so anyone active within a
+  week stays signed in, and a stolen refresh token dies the next time its
+  owner refreshes.
+- **401 or 403.** 401 is "who are you?": no token, a bad or expired one, an
+  inactive user, or a password changed since the token was issued — the token
+  carries a hash of it. 403 is "not you": signed in, but the role is not
+  allowed. Today only non-admins on `/users/` get a 403.
+- **Users are never deleted**, only deactivated, so whatever they recorded
+  still names someone. Deactivating one ends their sessions at once.
+
+Roles, one per user, on `accounts.Profile` — a one-to-one beside Django's
+`auth_user` rather than a custom user model, because production already had
+users and Django cannot swap the model under existing rows.
+
+| Role | Label | May use |
+|---|---|---|
+| `admin` | Admin | everything, and `/users/` |
+| `senior_merchant` | Senior Merchant | everything but `/users/` |
+| `merchant` | Merchant | everything but `/users/` |
+
+**Permissions per role are not decided yet** (§11): every signed-in user can
+use the whole API, and only `/users/` is admin-only. The checks live in
+`apps/accounts/permissions.py`, ready for the rules when they come.
+
+A Django superuser is an admin whatever its profile says. A new account gets
+its profile when first saved — a superuser as admin, anyone else as merchant —
+and a `CheckConstraint` keeps the role to the three values (D6).
+
+User-management guards, each a 400: an admin cannot deactivate themselves or
+change their own role; the last active admin cannot be deactivated or demoted;
+only a superuser can change a superuser's account, and a superuser stays admin.
 
 ---
 
@@ -1163,6 +1220,7 @@ stand for several identical boxes while printing one box's figures.
 | Terminology | Section 3 is now the agreed vocabulary |
 | Orders / Packing review | Rebuilt against the confirmed terminology; reconciliation corrected (D3) |
 | Photo storage | A private S3 bucket everywhere, development included; the API returns signed URLs that expire |
+| Authentication and roles | JWT sign-in, three roles, admin-only user management (§9). What each role may do is still open — item 4 |
 
 ### Still open
 
@@ -1174,8 +1232,10 @@ stand for several identical boxes while printing one box's figures.
 3. **Photo management depth** — upload, camera capture, set-main and delete are
    built. Whether rotation, cropping or client-side downscaling are needed is
    still open; camera captures currently upload at the sensor's full resolution.
-4. **Authentication and roles** — the sidebar shows a user; no auth exists. Must
-   be resolved before any deployment.
+4. **Permissions per role** — sign-in and roles exist (§9), but every signed-in
+   user can use the whole API; only user management is admin-only. Which
+   screens and actions belong to a merchant, a senior merchant and an admin is
+   undecided.
 5. **Order status coverage** — no `cancelled` or `on-hold` state. Retrofitting an
    enum later is disruptive.
 6. **Two colours of one style in one order** — colour sits on the order line and
@@ -1200,7 +1260,7 @@ Vertical slices — database, API and screen for one feature at a time.
 - [x] **7** Orders — list and create
 - [x] **8** Packing workspace
 - [x] **9** Packing list document — Excel, per order, one row per thing packed
-- [ ] **10** Authentication
+- [x] **10** Authentication — JWT sign-in, roles, user management (§9)
 
 Display (§10), each slice usable before the next starts:
 

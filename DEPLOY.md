@@ -12,7 +12,7 @@ code mounted from disk).
 | Piece | Where | What it is |
 |---|---|---|
 | Database | Amazon RDS | Postgres 17. RDS keeps its automated backups. |
-| `backend` | this repo, in Coolify | Django under gunicorn, DEBUG off. Runs migrations on start. Serves `/api` and `/admin` on port 8000 — the admin's CSS and JS too, through WhiteNoise — published nowhere: only Coolify's proxy and the frontend reach it. |
+| `backend` | this repo, in Coolify | Django under gunicorn, DEBUG off. Migrations are run by hand (§3). Serves `/api` and `/admin` on port 8000 — the admin's CSS and JS too, through WhiteNoise — published nowhere: only Coolify's proxy and the frontend reach it. |
 | `frontend` | frontend repo, in Coolify | The compiled Next.js app. Forwards `/api` to the backend's address, so the browser only ever talks to this. |
 | Images | Amazon S3 | A **private** bucket. Django uploads them, and every image URL the API returns is signed and expires (24 hours by default). |
 
@@ -72,6 +72,7 @@ never put them in a committed file.
 ```bash
 # Required
 DJANGO_SECRET_KEY=        # python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+                          # it also signs logins: changing it signs everyone out
 DJANGO_ALLOWED_HOSTS=hardgoods-and-display.ai.dkcexportstna.in,backend-hardgoods-and-display.ai.dkcexportstna.in
 DJANGO_SECURE_COOKIES=True
 
@@ -104,7 +105,14 @@ A missing required value stops the deploy with a message naming it.
    `https://backend-hardgoods-and-display.ai.dkcexportstna.in:8000`. The
    `:8000` is the container port the proxy forwards to; the address itself
    stays on 443.
-4. Deploy. Migrations run when the container starts.
+4. Deploy, then from the backend's *Terminal* tab:
+
+   ```bash
+   python manage.py migrate
+   ```
+
+   The container does not migrate on start, so a deploy that brings new
+   migrations is broken until this has run.
 
 Then the frontend, the same way from its own repo: build pack **Docker
 Compose**, compose file `docker-compose.prod.yml`, one environment variable,
@@ -118,15 +126,23 @@ and the domain `https://hardgoods-and-display.ai.dkcexportstna.in:3000` on its
 Coolify, so the frontend reaches the API by its public address. The address
 is compiled into the build: changing it needs a redeploy.
 
-## 4. Admin
+## 4. The first admin
 
-From the backend's *Terminal* tab in Coolify:
+Every page of the app needs a login, and only an admin can add users, so the
+first one comes from the backend's *Terminal* tab in Coolify:
 
 ```bash
 python manage.py createsuperuser
 ```
 
-Then https://backend-hardgoods-and-display.ai.dkcexportstna.in/admin/.
+A superuser is an admin in the app and can also use
+https://backend-hardgoods-and-display.ai.dkcexportstna.in/admin/. Everyone
+else is added by an admin from the app's Users screen, with a role. Accounts
+that existed before roles became admins if they were superusers, and merchants
+otherwise.
+
+Never run `seed_users` here: its password is in the repository. It refuses
+with DEBUG off.
 
 ## Bringing existing data
 
@@ -159,7 +175,14 @@ docker compose exec backend python manage.py copy_media_to_storage --source /app
 ## Updating
 
 Redeploy the backend in Coolify, or let its git webhook do it on push, then
-the frontend. Migrations run when the backend starts.
+the frontend. When the release brings new migrations, run
+`python manage.py migrate` from the backend's *Terminal* tab before the
+frontend goes out: the container does not run them itself.
+
+The release that added login brings some: they create the role and token
+tables and give every existing account a role. From then on the API refuses
+every request without a login, so the frontend with the login screen must go
+out with it.
 
 ## Backups
 
@@ -175,8 +198,15 @@ anything that fails.
 
 ## Known limits
 
-- **No login.** Anyone who can reach the site can read and change everything.
-  Decided on 2026-09-25 to add one later.
+- **Every role can do everything** but manage users. What each role may do is
+  not decided yet (ARCHITECTURE.md §11).
+- **The login throttle is approximate.** Ten tries a minute per client,
+  counted in each gunicorn worker's memory: with three workers, up to thirty.
+  A client is told apart by the `X-Forwarded-For` chain the proxies pass on;
+  were the frontend's proxy to drop the browser's address, everyone would
+  share one count.
+- **Old tokens pile up.** Every refresh token issued stays in the blacklist
+  tables after it expires; `python manage.py flushexpiredtokens` clears them.
 - **Image links expire.** A page left open longer than the expiry shows broken
   images until it is reloaded. Each signed link is new, so browsers download
   an image again on every page load rather than from their cache.
