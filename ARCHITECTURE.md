@@ -52,7 +52,7 @@ enough to be its own Django app with its own tables, sharing only the
 arithmetic in `apps/common`. Fully described in §10.
 
 **Not yet designed:** authentication and roles, photo editing beyond upload and
-set-main, photos for display products.
+set-main.
 
 ---
 
@@ -711,7 +711,8 @@ itself in a single response.
 
 | Endpoint | Methods | Notes |
 |---|---|---|
-| `/display-products/` | CRUD | own catalogue; no box, no parts. DELETE as Hardgoods, also refused while a template holds it |
+| `/display-products/` | CRUD | own catalogue; no box. Parts written in the same request, as Hardgoods. DELETE as Hardgoods, also refused while a template holds it |
+| `/display-product-images/` | POST, PATCH, DELETE | as `/product-images/`, owned by a display `product` **or** `part` |
 | `/pack-templates/` | CRUD | items written in the same request; `?is_library=true` for the picker |
 | `/stores/` | CRUD | outlets under a merchant; `?merchant=` for one chain's |
 | `/display-orders/` | CRUD | nested `lines`, each naming a `store` |
@@ -993,7 +994,7 @@ The two packaging weights are **copied from the template** when the carton is
 built rather than read back through `step`. A hand-built carton has no step, and
 would otherwise have no way to account for its own padding.
 
-**DisplayCartonContent** — `carton`→ · `product`→ · `description` · `quantity` ·
+**DisplayCartonContent** — `carton`→ · `product`→ · `part`→ · `description` · `quantity` ·
 `unit` · `net_weight_kg`
 
 `net_weight_kg` is that product's own weight only — the carton's padding sits on
@@ -1001,8 +1002,9 @@ the carton, because it belongs to the box rather than to any one thing inside
 it. Splitting it across contents would be arbitrary, and the split would show up
 on a customs line.
 
-No `part` field — Display products have no parts, so D3 does not apply and
-reconciliation is a plain sum.
+`part` is set when the product packs as parts, so the remainder can tell
+"twenty tops boxed" from "twenty legs still loose" — D3's reasoning, counted
+by piece (§10.4.1).
 
 ### 10.5 Weights and volume
 
@@ -1133,8 +1135,6 @@ stand for several identical boxes while printing one box's figures.
 
 ### 10.9 Still open
 
-- Photos for display products — the `ProductImage` owner constraint is a CHECK
-  over `product`/`part` and would need a third owner, or its own table.
 - Excel import of the order lines. Typing a fifty-store grid by hand is the
   obvious next bottleneck now that the bulk-fill covers only the uniform case.
 - Whether a display order still needs its own ship-to address. The columns are
