@@ -4,9 +4,8 @@ import tempfile
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
-from rest_framework.test import APITestCase
 
-from apps.common.testing import local_storage
+from apps.common.testing import SignedInAPITestCase, local_storage
 from apps.masters.models import Merchant
 from apps.orders.models import Order, OrderLine
 
@@ -40,10 +39,11 @@ def part_payload(**overrides):
     }
 
 
-class ProductShapeTests(APITestCase):
+class ProductShapeTests(SignedInAPITestCase):
     """`is_multi_part` decides how every carton for the SKU is built."""
 
     def setUp(self):
+        super().setUp()
         self.table = Product.objects.create(
             style_no="TBL-01", description="Table", is_multi_part=True
         )
@@ -113,8 +113,9 @@ class ProductShapeTests(APITestCase):
 
 
 @override_settings(STORAGES=local_storage(tempfile.mkdtemp()))
-class ProductPhotoTests(APITestCase):
+class ProductPhotoTests(SignedInAPITestCase):
     def setUp(self):
+        super().setUp()
         self.chair = Product.objects.create(style_no="CHR-01", description="Chair")
         self.table = Product.objects.create(
             style_no="TBL-01", description="Table", is_multi_part=True
@@ -177,8 +178,9 @@ class ProductPhotoTests(APITestCase):
 
 
 @override_settings(STORAGES=local_storage(tempfile.mkdtemp()))
-class ProductDeleteTests(APITestCase):
+class ProductDeleteTests(SignedInAPITestCase):
     def setUp(self):
+        super().setUp()
         self.table = Product.objects.create(
             style_no="TBL-01", description="Table", is_multi_part=True
         )
@@ -214,10 +216,11 @@ class ProductDeleteTests(APITestCase):
         self.assertTrue(Product.objects.filter(pk=self.table.pk).exists())
 
 
-class ProductStyleNameTests(APITestCase):
+class ProductStyleNameTests(SignedInAPITestCase):
     """The buyer's name for the style — what a box sticker prints."""
 
     def setUp(self):
+        super().setUp()
         # Complete enough to survive a save: a product missing its shipping
         # essentials is refused whatever the patch was about.
         self.product = Product.objects.create(
@@ -264,7 +267,7 @@ class ProductStyleNameTests(APITestCase):
         self.assertEqual(response.data["style_name"], "")
 
 
-class ProductDelegateTests(APITestCase):
+class ProductDelegateTests(SignedInAPITestCase):
     """A flag the desk sets per piece: off by default, and set per part."""
 
     def test_it_defaults_off_and_round_trips(self):

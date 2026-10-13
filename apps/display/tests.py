@@ -8,10 +8,9 @@ from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
-from rest_framework.test import APITestCase
 
 from apps.common import packing_sheet as sheet_kit
-from apps.common.testing import local_storage
+from apps.common.testing import SignedInAPITestCase, local_storage
 from apps.masters.models import Merchant, Store
 
 from . import services
@@ -349,13 +348,14 @@ class DisplayPackingTests(TestCase):
         self.assertEqual(before - after, 5)
 
 
-class OrderLineStoreTests(APITestCase):
+class OrderLineStoreTests(SignedInAPITestCase):
     """
     An order is split across a merchant's stores, and each store keeps its own
     mix — two stores need not want the same products at all.
     """
 
     def setUp(self):
+        super().setUp()
         self.merchant = Merchant.objects.create(code="ANT", name="Anthropologie")
         self.portland = store("118")
         self.austin = store("204")
@@ -632,10 +632,11 @@ class StorePackingTests(TestCase):
         self.assertEqual(len(services.packing_summary(self.order)["steps"]), 2)
 
 
-class DisplayPackingListTests(APITestCase):
+class DisplayPackingListTests(SignedInAPITestCase):
     """The sheet is blocked by store, because that is how it is picked."""
 
     def setUp(self):
+        super().setUp()
         self.merchant = Merchant.objects.create(code="ANT", name="Anthropologie")
         self.portland = store("118")
         self.portland.ship_city = "Portland"
@@ -1003,7 +1004,7 @@ class TemplateCodeTests(TestCase):
         self.assertEqual(template.code, "T-001")
 
 
-class DisplayProductShapeTests(APITestCase):
+class DisplayProductShapeTests(SignedInAPITestCase):
     """A display product is either one piece or several parts, fixed at birth."""
 
     URL = "/api/display-products/"
@@ -1216,7 +1217,7 @@ class PieceCountingTests(TestCase):
         self.assertTrue(row.is_matched)
 
 
-class TemplateItemPieceTests(APITestCase):
+class TemplateItemPieceTests(SignedInAPITestCase):
     """
     A template item names a piece. Two parts of one product may sit in two
     different templates, which is the reason the column exists.
@@ -1225,6 +1226,7 @@ class TemplateItemPieceTests(APITestCase):
     URL = "/api/pack-templates/"
 
     def setUp(self):
+        super().setUp()
         self.bow = DisplayProduct.objects.create(
             style_no="DSP-BOW-01", description="Velvet Bow",
             product_weight_kg=Decimal("0.1"),
@@ -1342,10 +1344,11 @@ class TemplateItemPieceTests(APITestCase):
         self.assertEqual(Decimal(str(response.data["gross_weight_kg"])), Decimal("6.350"))
 
 
-class TemplateDeleteTests(APITestCase):
+class TemplateDeleteTests(SignedInAPITestCase):
     """A design is deletable until a plan has packed it into cartons."""
 
     def setUp(self):
+        super().setUp()
         self.merchant = Merchant.objects.create(code="TRQ", name="Tarique")
         self.store = store()
         self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))
@@ -1425,12 +1428,13 @@ def upload(name="photo.gif"):
 
 
 @override_settings(STORAGES=local_storage(tempfile.mkdtemp()))
-class DisplayProductImageTests(APITestCase):
+class DisplayProductImageTests(SignedInAPITestCase):
     """Photos hang off a display product or one of its parts, never both."""
 
     URL = "/api/display-product-images/"
 
     def setUp(self):
+        super().setUp()
         self.wreath = DisplayProduct.objects.create(
             style_no="DSP-WRT-24", description='24" Pine Wreath'
         )
@@ -1489,8 +1493,9 @@ class DisplayProductImageTests(APITestCase):
 
 
 @override_settings(STORAGES=local_storage(tempfile.mkdtemp()))
-class DisplayProductDeleteTests(APITestCase):
+class DisplayProductDeleteTests(SignedInAPITestCase):
     def setUp(self):
+        super().setUp()
         self.arch = DisplayProduct.objects.create(
             style_no="DSP-ARC-84", description='84" Garden Arch', is_multi_part=True
         )
@@ -1525,7 +1530,7 @@ class DisplayProductDeleteTests(APITestCase):
         self.assertTrue(DisplayProduct.objects.filter(pk=self.arch.pk).exists())
 
 
-class DisplayStyleNameTests(APITestCase):
+class DisplayStyleNameTests(SignedInAPITestCase):
     def test_style_name_round_trips(self):
         response = self.client.post(
             "/api/display-products/",
@@ -1551,7 +1556,7 @@ class DisplayStyleNameTests(APITestCase):
         self.assertEqual(response.data["style_name"], "")
 
 
-class DisplayOrderEditTests(APITestCase):
+class DisplayOrderEditTests(SignedInAPITestCase):
     """
     An order can always be asked for more. Taking away what is already in a
     carton is refused, because reconciliation and the store overview are both
@@ -1560,6 +1565,7 @@ class DisplayOrderEditTests(APITestCase):
     """
 
     def setUp(self):
+        super().setUp()
         self.merchant = Merchant.objects.create(code="TRQ", name="Tarique")
         self.store = store()
         self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))
@@ -1716,7 +1722,7 @@ class DisplayOrderEditTests(APITestCase):
         self.assertIn("DSP-TBL-02", str(response.data["lines"]))
 
 
-class TemplateEditTests(APITestCase):
+class TemplateEditTests(SignedInAPITestCase):
     """
     Cartons copy their contents when a step is applied, so editing a design
     that is already packed has to rebuild them. A design two orders have
@@ -1724,6 +1730,7 @@ class TemplateEditTests(APITestCase):
     """
 
     def setUp(self):
+        super().setUp()
         self.merchant = Merchant.objects.create(code="TRQ", name="Tarique")
         self.store = store()
         self.bow = product("DSP-BOW-12", 0.08, (12, 12, 4))

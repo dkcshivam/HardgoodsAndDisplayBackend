@@ -3,10 +3,10 @@ from io import BytesIO
 
 from django.urls import reverse
 from openpyxl import load_workbook
-from rest_framework.test import APITestCase
 
 from apps.catalog.models import Product, ProductPart
 from apps.common import packing_sheet as sheet_kit
+from apps.common.testing import SignedInAPITestCase
 from apps.masters.models import Merchant
 
 from .models import Order, OrderLine
@@ -21,10 +21,11 @@ def under(sheet, caption):
     raise AssertionError(f"no {caption!r} on the sheet")
 
 
-class OrderFixture(APITestCase):
+class OrderFixture(SignedInAPITestCase):
     """One order: six chairs two-to-a-box, and two tables of two parts each."""
 
     def setUp(self):
+        super().setUp()
         self.merchant = Merchant.objects.create(code="UO", name="Urban Outfitters")
 
         self.chair = Product.objects.create(

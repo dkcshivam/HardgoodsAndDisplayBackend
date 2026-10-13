@@ -6,9 +6,8 @@ from pathlib import Path
 from django.core.management import CommandError, call_command
 from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
-from rest_framework.test import APITestCase
 
-from apps.common.testing import local_storage
+from apps.common.testing import SignedInAPITestCase, local_storage
 
 from .models import Store
 
@@ -22,7 +21,7 @@ class StoreTests(TestCase):
             Store.objects.create(name="118 Portland Pearl")
 
 
-class StoreApiTests(APITestCase):
+class StoreApiTests(SignedInAPITestCase):
     def payload(self, **overrides):
         data = {
             "name": "118 Portland Pearl",
