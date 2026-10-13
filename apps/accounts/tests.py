@@ -7,7 +7,7 @@ from unittest import mock
 from django.apps import apps as django_apps
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -70,6 +70,40 @@ class ExistingUsersMigrationTests(TestCase):
 
         self.assertEqual(Profile.objects.get(user=root).role, Role.ADMIN)
         self.assertEqual(Profile.objects.get(user=clerk).role, Role.MERCHANT)
+
+
+class SeedUsersTests(TestCase):
+    def seed(self):
+        call_command("seed_users", stdout=StringIO())
+
+    @override_settings(DEBUG=True)
+    def test_it_makes_one_user_per_role_and_can_run_again(self):
+        self.seed()
+        demo = User.objects.get(username="demo-senior")
+        demo.set_password("changed-pass-456")
+        demo.is_active = False
+        demo.save()
+
+        self.seed()
+
+        self.assertEqual(User.objects.count(), 3)
+        for user in User.objects.all():
+            with self.subTest(user=user.username):
+                self.assertTrue(user.is_active)
+                self.assertTrue(user.check_password("demo-pass-123"))
+        self.assertEqual(
+            {user.username: role_of(user) for user in User.objects.all()},
+            {
+                "demo-admin": Role.ADMIN,
+                "demo-senior": Role.SENIOR_MERCHANT,
+                "demo-merchant": Role.MERCHANT,
+            },
+        )
+
+    def test_it_refuses_with_debug_off(self):
+        with self.assertRaises(CommandError):
+            self.seed()
+        self.assertFalse(User.objects.exists())
 
 
 @override_settings(STORAGES=local_storage(tempfile.mkdtemp()))
