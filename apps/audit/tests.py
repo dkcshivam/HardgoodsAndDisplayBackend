@@ -1,13 +1,18 @@
 import base64
+import json
 import tempfile
 from decimal import Decimal
 from unittest import mock
 
+from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, connection, transaction
 from django.db.models import ProtectedError
 from django.test import TestCase, override_settings
+from rest_framework.test import APITestCase
 
+from apps.accounts.models import Role
 from apps.catalog.models import Product
 from apps.common.testing import SignedInAPITestCase, local_storage, make_user
 from apps.display import services as display_services
@@ -609,3 +614,100 @@ class FailedRequestTests(AuditedTestCase):
         category.refresh_from_db()
         self.assertEqual(category.name, "Lighting")
         self.assertEqual(self.events(), [])
+
+
+class UserTests(AuditedTestCase):
+    role = Role.ADMIN
+
+    def test_creating_a_user_is_recorded_without_the_password(self):
+        response = self.client.post(
+            "/api/users/",
+            {
+                "username": "asha",
+                "first_name": "Asha",
+                "role": "senior_merchant",
+                "password": "a-long-pass-123",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+
+        event = self.only_event()
+        self.assertEqual(
+            (event.action, event.actor, event.target_type, event.target_id, event.target_repr),
+            ("create", self.user, "auth.user", str(response.data["id"]), "asha"),
+        )
+        self.assertEqual(event.changes["username"], [None, "asha"])
+        self.assertEqual(event.changes["role"], [None, "senior_merchant"])
+        self.assertEqual(event.changes["password"], [None, "***"])
+        recorded = json.dumps(event.changes)
+        self.assertNotIn("a-long-pass-123", recorded)
+        self.assertNotIn(get_user_model().objects.get(username="asha").password, recorded)
+
+    def test_editing_a_user_is_recorded_and_a_new_password_masked(self):
+        user = make_user(username="asha")
+        url = f"/api/users/{user.pk}/"
+
+        self.client.patch(url, {"role": "senior_merchant", "first_name": "Asha"}, format="json")
+        self.client.patch(url, {"password": "a-new-long-pass-456"}, format="json")
+        # A blank password keeps the old one: nothing changed, nothing recorded.
+        self.client.patch(url, {"first_name": "Asha", "password": ""}, format="json")
+
+        role, password = self.events()
+        self.assertEqual(
+            role.changes,
+            {"first_name": ["", "Asha"], "role": ["merchant", "senior_merchant"]},
+        )
+        self.assertEqual(password.changes, {"password": ["***", "***"]})
+        self.assertEqual({role.target_repr, password.target_repr}, {"asha"})
+
+    def test_changing_your_own_password_is_recorded_masked(self):
+        response = self.client.post(
+            "/api/auth/password/",
+            {"current_password": "a-long-pass-123", "new_password": "a-new-long-pass-456"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 204)
+
+        event = self.only_event()
+        self.assertEqual(
+            (event.action, event.actor, event.target_type, event.target_id),
+            ("update", self.user, "auth.user", str(self.user.pk)),
+        )
+        self.assertEqual(event.changes, {"password": ["***", "***"]})
+
+
+class SessionTests(APITestCase):
+    def setUp(self):
+        # The login throttle counts in the cache, which outlives a test.
+        cache.clear()
+        self.user = make_user(username="asha", first_name="Asha", last_name="Rao")
+
+    def login(self, password="a-long-pass-123"):
+        return self.client.post(
+            "/api/auth/login/", {"username": "asha", "password": password}, format="json"
+        )
+
+    def test_a_login_and_a_logout_are_recorded_against_the_user(self):
+        tokens = self.login().data
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+        response = self.client.post(
+            "/api/auth/logout/", {"refresh": tokens["refresh"]}, format="json"
+        )
+        self.assertEqual(response.status_code, 204)
+
+        events = AuditEvent.objects.order_by("id")
+        self.assertEqual(
+            [
+                (e.action, e.actor, e.actor_name, e.target_type, e.target_id, e.changes)
+                for e in events
+            ],
+            [
+                (action, self.user, "Asha Rao", "auth.user", str(self.user.pk), {})
+                for action in ("login", "logout")
+            ],
+        )
+
+    def test_a_failed_login_is_not_recorded(self):
+        self.assertEqual(self.login("not-the-password").status_code, 401)
+        self.assertFalse(AuditEvent.objects.exists())

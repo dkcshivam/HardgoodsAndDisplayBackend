@@ -8,6 +8,9 @@ from rest_framework_simplejwt.serializers import (
     TokenRefreshSerializer,
 )
 
+from apps.audit import services as audit
+from apps.audit.models import Action
+
 from . import services
 from .models import Role, role_of
 
@@ -74,7 +77,7 @@ class UserSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        return services.create_user(validated_data)
+        return services.create_user(self.context["request"].user, validated_data)
 
     def update(self, user, validated_data):
         return services.update_user(self.context["request"].user, user, validated_data)
@@ -86,6 +89,8 @@ class LoginSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
         data["user"] = UserSerializer(self.user).data
+        # Beside simplejwt's own last_login stamp: a failed login never gets here.
+        audit.record(self.user, Action.LOGIN, self.user)
         return data
 
 

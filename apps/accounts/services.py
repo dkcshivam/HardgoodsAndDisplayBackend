@@ -3,6 +3,9 @@ from django.db import transaction
 from django.db.models import Q
 from rest_framework.exceptions import ValidationError
 
+from apps.audit import services as audit
+from apps.audit.models import Action
+
 from .models import Role, role_of
 
 User = get_user_model()
@@ -15,10 +18,11 @@ def change_password(user, password: str) -> None:
     # every session this user has, this one included, ends here.
     user.set_password(password)
     user.save(update_fields=["password"])
+    audit.record(user, Action.UPDATE, user, {"password": [audit.MASK, audit.MASK]})
 
 
 @transaction.atomic
-def create_user(data: dict):
+def create_user(actor, data: dict):
     role = data.pop("role", Role.MERCHANT)
     password = data.pop("password")
     user = User(**data)
@@ -26,12 +30,14 @@ def create_user(data: dict):
     user.save()  # the receiver gives it a profile
     user.profile.role = role
     user.profile.save(update_fields=["role"])
+    audit.record(actor, Action.CREATE, user, audit.diff(None, _snapshot(user)))
     return user
 
 
 @transaction.atomic
 def update_user(actor, user, data: dict):
     check_change(actor, user, data)
+    before = _snapshot(user)
     role = data.pop("role", None)
     password = data.pop("password", None)
     for field, value in data.items():
@@ -42,7 +48,14 @@ def update_user(actor, user, data: dict):
     if role is not None and role != user.profile.role:
         user.profile.role = role
         user.profile.save(update_fields=["role"])
+    if changes := audit.diff(before, _snapshot(user)):
+        audit.record(actor, Action.UPDATE, user, changes)
     return user
+
+
+def _snapshot(user) -> dict:
+    # The role sits on the profile, but to whoever reads the trail it is the user's.
+    return audit.snapshot(user) | {"role": role_of(user).value}
 
 
 def check_change(actor, user, data: dict) -> None:

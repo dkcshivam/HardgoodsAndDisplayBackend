@@ -9,6 +9,9 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from apps.audit import services as audit
+from apps.audit.models import Action
+
 from . import services
 from .models import Role
 from .permissions import IsAdmin
@@ -41,6 +44,7 @@ class LogoutView(APIView):
             # Expired, already blacklisted or not a token: it opens nothing
             # either way, and signing out should not fail over it.
             pass
+        audit.record(request.user, Action.LOGOUT, request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
