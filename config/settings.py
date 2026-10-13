@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "django_filters",
+    "apps.accounts",
     "apps.masters",
     "apps.catalog",
     "apps.orders",
