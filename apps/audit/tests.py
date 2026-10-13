@@ -1,6 +1,7 @@
 import base64
 import tempfile
 from decimal import Decimal
+from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, connection, transaction
@@ -17,7 +18,8 @@ from apps.display.models import (
     PackTemplate,
     PackTemplateItem,
 )
-from apps.masters.models import Merchant, Store
+from apps.masters.models import Category, Merchant, Store
+from apps.masters.serializers import CategorySerializer
 from apps.orders.models import Order, OrderLine
 
 from .models import Action, AppendOnlyError, AuditEvent
@@ -586,3 +588,24 @@ class DisplayActionTests(AuditedTestCase):
         event = self.only_event()
         self.assertEqual(event.target_type, "display.displayorder")
         self.assertEqual(event.changes, {"status": ["draft", "packing"]})
+
+
+class FailedRequestTests(AuditedTestCase):
+    def test_a_request_that_fails_after_its_write_leaves_no_event(self):
+        category = Category.objects.create(name="Lighting")
+        self.client.raise_request_exception = False
+
+        with (
+            mock.patch.object(
+                CategorySerializer, "to_representation", side_effect=RuntimeError
+            ),
+            self.assertLogs("django.request", "ERROR"),
+        ):
+            response = self.client.patch(
+                f"/api/categories/{category.pk}/", {"name": "Lamps"}, format="json"
+            )
+
+        self.assertEqual(response.status_code, 500)
+        category.refresh_from_db()
+        self.assertEqual(category.name, "Lighting")
+        self.assertEqual(self.events(), [])
