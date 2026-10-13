@@ -11,10 +11,12 @@ from django.core.management import call_command
 from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 from django.urls import reverse
-from rest_framework.test import APITestCase
+from rest_framework.exceptions import ValidationError
+from rest_framework.test import APIClient, APITestCase
 
-from apps.common.testing import local_storage, make_user
+from apps.common.testing import SignedInAPITestCase, local_storage, make_user, sign_in
 
+from . import services
 from .models import Profile, Role, role_of
 
 User = get_user_model()
@@ -259,3 +261,161 @@ class AuthTests(APITestCase):
         response = self.change_password(self.password, "12345")
         self.assertEqual(response.status_code, 400)
         self.assertIn("new_password", response.data)
+
+
+class UserApiTests(SignedInAPITestCase):
+    role = Role.ADMIN
+
+    def payload(self, **overrides):
+        return {
+            "username": "asha",
+            "first_name": "Asha",
+            "last_name": "Rao",
+            "email": "asha@example.com",
+            "role": "senior_merchant",
+            "password": "a-long-pass-123",
+        } | overrides
+
+    def patch(self, user, data):
+        return self.client.patch(f"/api/users/{user.pk}/", data, format="json")
+
+    def test_only_an_admin_may_manage_users(self):
+        for role in (Role.MERCHANT, Role.SENIOR_MERCHANT):
+            with self.subTest(role=role):
+                client = APIClient()
+                sign_in(client, role)
+                self.assertEqual(client.get("/api/users/").status_code, 403)
+                response = client.post("/api/users/", self.payload(), format="json")
+                self.assertEqual(response.status_code, 403)
+
+    def test_users_need_a_sign_in(self):
+        self.assertEqual(APIClient().get("/api/users/").status_code, 401)
+
+    def test_the_list_is_paginated_and_never_shows_a_password(self):
+        response = self.client.get("/api/users/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+        user = response.data["results"][0]
+        self.assertEqual(user["role"], "admin")
+        self.assertEqual(user["role_label"], "Admin")
+        self.assertNotIn("password", user)
+
+    def test_the_list_searches_filters_and_orders(self):
+        make_user(Role.SENIOR_MERCHANT, username="asha", email="asha@dkc.example")
+        make_user(username="ravi", is_active=False)
+
+        def names(query):
+            response = self.client.get("/api/users/", query)
+            self.assertEqual(response.status_code, 200)
+            return [user["username"] for user in response.data["results"]]
+
+        self.assertEqual(names({"search": "dkc.example"}), ["asha"])
+        self.assertEqual(names({"role": "senior_merchant"}), ["asha"])
+        self.assertEqual(names({"is_active": "false"}), ["ravi"])
+        self.assertEqual(names({"ordering": "-role"}), ["asha", "ravi", "admin"])
+
+    def test_an_admin_creates_a_user_with_a_password(self):
+        response = self.client.post("/api/users/", self.payload(), format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["role"], "senior_merchant")
+        self.assertEqual(response.data["full_name"], "Asha Rao")
+        self.assertNotIn("password", response.data)
+
+        user = User.objects.get(username="asha")
+        self.assertTrue(user.check_password("a-long-pass-123"))
+        self.assertEqual(user.profile.role, Role.SENIOR_MERCHANT)
+
+    def test_a_new_user_is_a_merchant_unless_told_otherwise(self):
+        payload = self.payload()
+        del payload["role"]
+        response = self.client.post("/api/users/", payload, format="json")
+        self.assertEqual(response.data["role"], "merchant")
+
+    def test_a_new_user_needs_a_password_the_validators_accept(self):
+        for password in (None, "", "12345", "asha@example.com"):
+            with self.subTest(password=password):
+                payload = self.payload(password=password)
+                if password is None:
+                    del payload["password"]
+                response = self.client.post("/api/users/", payload, format="json")
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("password", response.data)
+        self.assertFalse(User.objects.filter(username="asha").exists())
+
+    def test_an_admin_edits_a_user_and_resets_their_password(self):
+        user = make_user(username="asha")
+
+        response = self.patch(user, {"first_name": "Asha", "role": "senior_merchant"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["role"], "senior_merchant")
+        self.assertEqual(response.data["full_name"], "Asha")
+
+        response = self.patch(user, {"password": "a-new-long-pass-456"})
+        self.assertEqual(response.status_code, 200)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password("a-new-long-pass-456"))
+        self.assertEqual(user.first_name, "Asha")
+
+    def test_an_edit_with_no_password_keeps_it(self):
+        user = make_user(username="asha")
+        for password in (None, ""):
+            with self.subTest(password=password):
+                payload = self.payload(password=password)
+                if password is None:
+                    del payload["password"]
+                response = self.client.put(f"/api/users/{user.pk}/", payload, format="json")
+                self.assertEqual(response.status_code, 200)
+                user.refresh_from_db()
+                self.assertTrue(user.check_password("a-long-pass-123"))
+
+    def test_users_are_never_deleted(self):
+        user = make_user(username="asha")
+        self.assertEqual(self.client.delete(f"/api/users/{user.pk}/").status_code, 405)
+        self.assertTrue(User.objects.filter(pk=user.pk).exists())
+
+    def test_an_admin_cannot_deactivate_themselves(self):
+        response = self.patch(self.user, {"is_active": False})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("is_active", response.data)
+
+    def test_an_admin_cannot_change_their_own_role(self):
+        make_user(Role.ADMIN, username="vik")
+        response = self.patch(self.user, {"role": "merchant"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("role", response.data)
+
+    def test_an_admin_may_demote_or_deactivate_another_admin(self):
+        other = make_user(Role.ADMIN, username="vik")
+        self.assertEqual(self.patch(other, {"role": "merchant"}).status_code, 200)
+        self.assertEqual(self.patch(other, {"is_active": False}).status_code, 200)
+
+    def test_the_last_active_admin_stays_one(self):
+        # The API cannot reach this alone: whoever asks is another active
+        # admin. It is what stops two admins demoting each other at once.
+        merchant = make_user(username="ravi")
+        for change in ({"role": Role.MERCHANT}, {"is_active": False}):
+            with self.subTest(change=change), self.assertRaises(ValidationError):
+                services.update_user(merchant, self.user, dict(change))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+        self.assertEqual(self.user.profile.role, Role.ADMIN)
+
+    def test_only_a_superuser_edits_a_superuser(self):
+        root = User.objects.create_superuser("root", "root@example.com", "x")
+        response = self.patch(root, {"password": "a-new-long-pass-456"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("detail", response.data)
+
+        self.client.force_authenticate(
+            User.objects.create_superuser("boss", "boss@example.com", "x")
+        )
+        self.assertEqual(self.patch(root, {"first_name": "Root"}).status_code, 200)
+
+    def test_a_superuser_is_always_an_admin(self):
+        root = User.objects.create_superuser("root", "root@example.com", "x")
+        self.client.force_authenticate(
+            User.objects.create_superuser("boss", "boss@example.com", "x")
+        )
+        response = self.patch(root, {"role": "merchant"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("role", response.data)

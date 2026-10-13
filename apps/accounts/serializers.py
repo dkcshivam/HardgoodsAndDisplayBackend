@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.serializers import (
@@ -7,6 +8,7 @@ from rest_framework_simplejwt.serializers import (
     TokenRefreshSerializer,
 )
 
+from . import services
 from .models import Role, role_of
 
 User = get_user_model()
@@ -23,8 +25,13 @@ class RoleField(serializers.ChoiceField):
 
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
-    role = RoleField()
+    role = RoleField(required=False)
     role_label = serializers.SerializerMethodField()
+    # Required to create a user. On an edit, one resets it; a blank one, as an
+    # untouched form field sends, keeps the old.
+    password = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
 
     class Meta:
         model = User
@@ -40,6 +47,7 @@ class UserSerializer(serializers.ModelSerializer):
             "is_active",
             "last_login",
             "date_joined",
+            "password",
         ]
         read_only_fields = ["last_login", "date_joined"]
 
@@ -48,6 +56,28 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_role_label(self, user) -> str:
         return role_of(user).label
+
+    def validate(self, attrs):
+        password = attrs.get("password")
+        if self.instance is None and not password:
+            raise serializers.ValidationError({"password": ["This field is required."]})
+        if password:
+            # Judged against the names it will sit beside after this save.
+            named = {
+                field: attrs.get(field, getattr(self.instance, field, ""))
+                for field in ("username", "first_name", "last_name", "email")
+            }
+            try:
+                validate_password(password, User(**named))
+            except DjangoValidationError as error:
+                raise serializers.ValidationError({"password": list(error.messages)})
+        return attrs
+
+    def create(self, validated_data):
+        return services.create_user(validated_data)
+
+    def update(self, user, validated_data):
+        return services.update_user(self.context["request"].user, user, validated_data)
 
 
 class LoginSerializer(TokenObtainPairSerializer):

@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from apps.accounts.views import UserViewSet
 from apps.catalog.views import ProductImageViewSet, ProductViewSet
 from apps.display.views import (
     DisplayOrderViewSet,
@@ -25,6 +26,8 @@ router.register("display-products", DisplayProductViewSet)
 router.register("display-product-images", DisplayProductImageViewSet)
 router.register("pack-templates", PackTemplateViewSet)
 router.register("display-orders", DisplayOrderViewSet)
+
+router.register("users", UserViewSet)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
