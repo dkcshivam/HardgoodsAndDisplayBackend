@@ -5,7 +5,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from . import services
+from apps.audit import services as audit
 from apps.audit.mixins import AuditedViewSetMixin
+from apps.audit.models import Action
 from apps.common import invoice_sheet as invoice_kit
 from apps.common import packing_sheet as sheet_kit
 
@@ -59,10 +61,17 @@ class OrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        before = audit.plan_summary(order)
         plan = services.build_packing_plan(order)
         services.apply_packing_plan(order, plan)
 
         order.refresh_from_db()
+        audit.record(
+            request.user,
+            Action.AUTO_PACK,
+            order,
+            audit.summary(before, audit.plan_summary(order)),
+        )
         return Response(self._plan_payload(order))
 
     def _save_packing(self, request):
@@ -74,6 +83,7 @@ class OrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
 
         payload = SaveCartonsSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
+        before = audit.plan_summary(order)
 
         with transaction.atomic():
             self._replace_cartons(order, payload.validated_data["cartons"])
@@ -95,6 +105,12 @@ class OrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
                 order.save(update_fields=["status", "updated_at"])
 
         order.refresh_from_db()
+        audit.record(
+            request.user,
+            Action.SAVE_PACKING,
+            order,
+            audit.summary(before, audit.plan_summary(order)),
+        )
         return Response(self._plan_payload(order))
 
     @action(detail=True, methods=["get"], url_path="packing-list")
@@ -201,8 +217,12 @@ class OrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        previous = order.status
         order.status = next_status
         order.save(update_fields=["status", "updated_at"])
+        audit.record(
+            request.user, Action.ADVANCE_STATUS, order, {"status": [previous, next_status]}
+        )
         return Response(OrderSerializer(order).data)
 
     # ── Helpers ──────────────────────────────────────────────────────

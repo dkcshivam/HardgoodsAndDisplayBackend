@@ -2,8 +2,10 @@ import json
 from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass
+from decimal import Decimal
 
 from django.core.serializers.json import DjangoJSONEncoder
+from django.db.models import Count, Sum
 from django.db.models.fields.files import FieldFile
 
 from .models import Action, AuditEvent
@@ -101,6 +103,41 @@ def _row_changes(old: Rows, new: Rows) -> tuple[list, list]:
         [json.loads(row) for row in sorted((kept - made).elements())],
         [json.loads(row) for row in sorted((made - kept).elements())],
     )
+
+
+def summary(before: dict | None, after: dict | None) -> dict:
+    """
+    [before, after] for every key, changed or not, so an action on an order
+    says what it acted on. Status is the exception: news only when it moved.
+    """
+    before, after = before or {}, after or {}
+    changes = {key: [before.get(key), after.get(key)] for key in {**before, **after}}
+    if "status" in changes and changes["status"][0] == changes["status"][1]:
+        del changes["status"]
+    return changes
+
+
+def plan_summary(order) -> dict:
+    # Three numbers, whatever the plan's size: a 1 200-carton save is one row.
+    totals = order.cartons.aggregate(
+        count=Count("id"), weight=Sum("gross_weight_kg")
+    )
+    return {
+        "status": order.status,
+        "carton_count": totals["count"],
+        "total_gross_weight_kg": totals["weight"] or Decimal("0.000"),
+    }
+
+
+def step_summary(step) -> dict | None:
+    if step is None:
+        return None
+    return {
+        "sequence": step.sequence,
+        "store": step.store.name,
+        "template": step.template.code,
+        "count": step.count,
+    }
 
 
 def record(actor, action: Action, target, changes: dict | None = None) -> AuditEvent:

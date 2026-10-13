@@ -415,3 +415,174 @@ class PhotoTests(AuditedTestCase):
         self.assertTrue(name.startswith(f"products/{product.pk}/"), name)
         self.assertEqual(deleted.action, Action.DELETE)
         self.assertEqual(deleted.changes["image"], [name, None])
+
+
+class HardgoodsActionTests(AuditedTestCase):
+    def setUp(self):
+        super().setUp()
+        self.order = Order.objects.create(name="Fall", merchant=merchant())
+        OrderLine.objects.create(order=self.order, product=chair(), quantity=6)
+        self.url = f"/api/orders/{self.order.pk}/"
+
+    def test_auto_pack_records_the_size_of_the_plan(self):
+        plan = self.client.post(self.url + "auto-pack/").data
+
+        event = self.only_event()
+        self.assertEqual(
+            (event.action, event.target_type, event.target_id, event.target_repr),
+            ("auto_pack", "orders.order", str(self.order.pk), self.order.number),
+        )
+        self.assertEqual(
+            event.changes,
+            {
+                "carton_count": [0, 3],
+                "total_gross_weight_kg": ["0.000", str(plan["total_gross_weight_kg"])],
+            },
+        )
+
+    def put_packing(self, cartons):
+        return self.client.put(
+            self.url + "packing/",
+            {
+                "cartons": [
+                    {
+                        "carton_no": carton["carton_no"],
+                        "length_in": carton["length_in"],
+                        "width_in": carton["width_in"],
+                        "height_in": carton["height_in"],
+                        "gross_weight_kg": carton["gross_weight_kg"],
+                        "contents": [
+                            {
+                                "product": item["product"],
+                                "quantity": item["quantity"],
+                                "net_weight_kg": item["net_weight_kg"],
+                            }
+                            for item in carton["contents"]
+                        ],
+                    }
+                    for carton in cartons
+                ]
+            },
+            format="json",
+        )
+
+    def test_saving_the_packing_records_its_size_and_the_status_it_moved(self):
+        plan = self.client.post(self.url + "auto-pack/").data
+        weight = str(plan["total_gross_weight_kg"])
+
+        # Two boxes of three leave chairs unpacked: refused, so not recorded.
+        self.assertEqual(self.put_packing(plan["cartons"][:2]).status_code, 400)
+        self.assertEqual(self.events(Action.SAVE_PACKING), [])
+
+        self.assertEqual(self.put_packing(plan["cartons"]).status_code, 200)
+        self.assertEqual(
+            self.only_event(Action.SAVE_PACKING).changes,
+            {
+                "carton_count": [3, 3],
+                "total_gross_weight_kg": [weight, weight],
+                "status": ["draft", "packing"],
+            },
+        )
+
+    def test_advancing_the_status_records_the_rung(self):
+        self.assertEqual(self.client.post(self.url + "advance-status/").status_code, 200)
+        # Packed needs a plan, and there is none: refused, so not recorded.
+        self.assertEqual(self.client.post(self.url + "advance-status/").status_code, 400)
+
+        event = self.only_event()
+        self.assertEqual(event.action, Action.ADVANCE_STATUS)
+        self.assertEqual(event.changes, {"status": ["draft", "packing"]})
+
+
+class DisplayActionTests(AuditedTestCase):
+    def setUp(self):
+        super().setUp()
+        self.bow = display_product()
+        self.template = display_template("T-001", self.bow, 10)
+        self.portland = Store.objects.create(name="118 Portland")
+        self.austin = Store.objects.create(name="204 Austin")
+        self.order = DisplayOrder.objects.create(name="Holiday", merchant=merchant())
+        for position, outlet in enumerate((self.portland, self.austin), start=1):
+            DisplayOrderLine.objects.create(
+                order=self.order,
+                store=outlet,
+                product=self.bow,
+                quantity=30,
+                store_position=position,
+            )
+        self.url = f"/api/display-orders/{self.order.pk}/"
+
+    def apply(self, outlet, **extra):
+        return self.client.post(
+            self.url + "steps/",
+            {"template": self.template.pk, "store": outlet.pk, **extra},
+            format="json",
+        )
+
+    def test_a_step_is_recorded_when_applied_recounted_and_removed(self):
+        self.assertEqual(self.apply(self.portland).status_code, 200)
+        self.assertEqual(
+            self.client.patch(self.url + "steps/1/", {"count": 2}, format="json").status_code,
+            200,
+        )
+        self.assertEqual(self.client.delete(self.url + "steps/1/").status_code, 200)
+
+        added, changed, removed = self.events()
+        self.assertEqual(
+            [e.action for e in (added, changed, removed)],
+            ["add_step", "update_step", "delete_step"],
+        )
+        self.assertEqual({e.target_repr for e in self.events()}, {self.order.number})
+        self.assertEqual(
+            added.changes,
+            {
+                "status": ["draft", "packing"],
+                "sequence": [None, 1],
+                "store": [None, "118 Portland"],
+                "template": [None, "T-001"],
+                "count": [None, 3],
+            },
+        )
+        self.assertEqual(
+            changed.changes,
+            {
+                "sequence": [1, 1],
+                "store": ["118 Portland", "118 Portland"],
+                "template": ["T-001", "T-001"],
+                "count": [3, 2],
+            },
+        )
+        self.assertEqual(
+            removed.changes,
+            {
+                "sequence": [1, None],
+                "store": ["118 Portland", None],
+                "template": ["T-001", None],
+                "count": [2, None],
+            },
+        )
+
+    def test_a_refused_step_records_nothing(self):
+        self.assertEqual(self.apply(self.portland, count=9).status_code, 400)
+        self.assertEqual(self.client.delete(self.url + "steps/7/").status_code, 400)
+        self.assertEqual(self.events(), [])
+
+    def test_replicating_a_plan_is_one_event_naming_where_it_went(self):
+        self.apply(self.portland)
+
+        response = self.client.post(
+            self.url + "replicate/", {"store": self.portland.pk}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        self.assertEqual(len(self.events(Action.ADD_STEP)), 1)
+        self.assertEqual(
+            self.only_event(Action.REPLICATE).changes,
+            {"store": [None, "118 Portland"], "replicated_to": [None, ["204 Austin"]]},
+        )
+
+    def test_advancing_the_status_records_the_rung(self):
+        self.client.post(self.url + "advance-status/")
+        event = self.only_event()
+        self.assertEqual(event.target_type, "display.displayorder")
+        self.assertEqual(event.changes, {"status": ["draft", "packing"]})

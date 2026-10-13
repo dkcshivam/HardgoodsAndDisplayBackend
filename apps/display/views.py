@@ -7,7 +7,9 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from . import services
+from apps.audit import services as audit
 from apps.audit.mixins import AuditedViewSetMixin
+from apps.audit.models import Action
 from apps.common import invoice_sheet as invoice_kit
 from apps.common import packing_sheet as sheet_kit
 from apps.common.deletion import delete_with_photos, refuse_if_used
@@ -288,8 +290,9 @@ class DisplayOrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        previous = order.status
         try:
-            services.apply_step(
+            step = services.apply_step(
                 order,
                 payload.validated_data["template"],
                 store,
@@ -299,6 +302,15 @@ class DisplayOrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
         self._advance_from_draft(order)
+        audit.record(
+            request.user,
+            Action.ADD_STEP,
+            order,
+            audit.summary(
+                {"status": previous},
+                {"status": order.status, **audit.step_summary(step)},
+            ),
+        )
         return Response(self._plan(order, store.id))
 
     @action(
@@ -320,6 +332,8 @@ class DisplayOrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        step = order.steps.filter(sequence=int(sequence)).first()
+        before = audit.step_summary(step)
         try:
             if request.method == "DELETE":
                 adjustments = services.delete_step(order, int(sequence))
@@ -331,6 +345,17 @@ class DisplayOrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
                 )
         except services.PackingError as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.method == "DELETE":
+            audit.record(
+                request.user, Action.DELETE_STEP, order, audit.summary(before, None)
+            )
+        else:
+            # Looked up again by id: the replay may have clamped it.
+            after = audit.step_summary(order.steps.filter(pk=step.pk).first())
+            audit.record(
+                request.user, Action.UPDATE_STEP, order, audit.summary(before, after)
+            )
 
         return Response(
             {
@@ -381,12 +406,26 @@ class DisplayOrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
         payload.is_valid(raise_exception=True)
         source = payload.validated_data["store"]
 
+        previous = order.status
         try:
             copied = services.replicate_plan(order, source.id)
         except services.PackingError as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
 
         self._advance_from_draft(order)
+        audit.record(
+            request.user,
+            Action.REPLICATE,
+            order,
+            audit.summary(
+                {"status": previous},
+                {
+                    "status": order.status,
+                    "store": source.name,
+                    "replicated_to": [store.name for store in copied],
+                },
+            ),
+        )
         return Response(
             {
                 **self._plan(order, source.id),
@@ -473,8 +512,12 @@ class DisplayOrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        previous = order.status
         order.status = next_status
         order.save(update_fields=["status", "updated_at"])
+        audit.record(
+            request.user, Action.ADVANCE_STATUS, order, {"status": [previous, next_status]}
+        )
         return Response(DisplayOrderSerializer(order).data)
 
     # ── Helpers ──────────────────────────────────────────────────────
