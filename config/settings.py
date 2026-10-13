@@ -3,6 +3,7 @@ Anything that differs between a laptop and the server lives in .env.
 See .env.example for the full list.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -40,8 +41,8 @@ if not DEBUG and SECRET_KEY in {"", DEV_SECRET_KEY}:
         "Set DJANGO_SECRET_KEY. The development key is public, and DEBUG is off."
     )
 
-# Only the admin uses sessions — the app has no login. Turn these on when the
-# admin is reached over https.
+# Only the admin uses sessions; the API takes a JWT in the Authorization
+# header. Turn these on when the admin is reached over https.
 SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = env_bool("DJANGO_SECURE_COOKIES", False)
 
 # Behind a TLS-terminating proxy — a tunnel, or any real deployment — the
@@ -63,6 +64,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_filters",
     "apps.accounts",
@@ -131,6 +133,19 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    # Each refresh hands back a new refresh token and retires the old one, so
+    # a stolen token works only until its owner next refreshes.
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    # Tokens carry a hash of the password they were issued under: changing or
+    # resetting a password signs that user out everywhere.
+    "CHECK_REVOKE_TOKEN": True,
+}
+
 
 # ── Localisation ─────────────────────────────────────────────────────
 
@@ -191,6 +206,14 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ── REST framework ───────────────────────────────────────────────────
 
 REST_FRAMEWORK = {
+    # No session authentication: a Django admin session on the same host would
+    # make DRF demand a CSRF token on every write the frontend sends.
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    # Per client address and per process: gunicorn's workers each count apart.
+    "DEFAULT_THROTTLE_RATES": {"login": "10/minute"},
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",

@@ -29,7 +29,7 @@ router.register("display-orders", DisplayOrderViewSet)
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include(router.urls)),
-    path("api/auth/", include("rest_framework.urls")),  # browsable API login
+    path("api/auth/", include("apps.accounts.urls")),
 ]
 
 # No static route: WhiteNoise answers /static/ from its middleware, and images
