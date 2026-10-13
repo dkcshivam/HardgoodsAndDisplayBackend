@@ -1,6 +1,7 @@
 from django.db.models import Q
 from rest_framework import viewsets
 
+from apps.audit.mixins import AuditedViewSetMixin
 from apps.common.deletion import delete_with_photos, refuse_if_used
 
 from .models import Product, ProductImage
@@ -11,7 +12,7 @@ from .serializers import (
 )
 
 
-class ProductViewSet(viewsets.ModelViewSet):
+class ProductViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
     """List returns a light shape so the table loads fast; detail returns all."""
 
     queryset = (
@@ -29,6 +30,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         "hts_code",
     ]
     ordering_fields = ["style_no", "style_name", "description", "created_at"]
+    audit_related = ("parts",)
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -48,10 +50,11 @@ class ProductViewSet(viewsets.ModelViewSet):
         photos = ProductImage.objects.filter(
             Q(product=instance) | Q(part__product=instance)
         )
-        delete_with_photos(instance, photos)
+        with self.audit_delete(instance):
+            delete_with_photos(instance, photos)
 
 
-class ProductImageViewSet(viewsets.ModelViewSet):
+class ProductImageViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
     """
     Photos arrive one at a time as multipart, after their owner exists — a
     product or part has to have an id before a file can point at it.
@@ -72,7 +75,9 @@ class ProductImageViewSet(viewsets.ModelViewSet):
         serializer.save(
             is_main=serializer.validated_data.get("is_main", False) or first
         )
+        self.audit_create(serializer.instance)
 
     def perform_destroy(self, instance):
-        instance.image.delete(save=False)
-        instance.delete()
+        with self.audit_delete(instance):
+            instance.image.delete(save=False)
+            instance.delete()

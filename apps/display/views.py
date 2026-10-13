@@ -7,6 +7,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from . import services
+from apps.audit.mixins import AuditedViewSetMixin
 from apps.common import invoice_sheet as invoice_kit
 from apps.common import packing_sheet as sheet_kit
 from apps.common.deletion import delete_with_photos, refuse_if_used
@@ -42,7 +43,7 @@ from .serializers import (
 )
 
 
-class DisplayProductViewSet(viewsets.ModelViewSet):
+class DisplayProductViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
     queryset = (
         DisplayProduct.objects.select_related("category")
         .prefetch_related("parts__images", "images")
@@ -52,6 +53,7 @@ class DisplayProductViewSet(viewsets.ModelViewSet):
     filterset_fields = ["status", "category", "is_multi_part"]
     search_fields = ["style_no", "style_name", "description"]
     ordering_fields = ["style_no", "created_at"]
+    audit_related = ("parts",)
 
     def perform_destroy(self, instance):
         refuse_if_used(
@@ -70,10 +72,11 @@ class DisplayProductViewSet(viewsets.ModelViewSet):
         photos = DisplayProductImage.objects.filter(
             Q(product=instance) | Q(part__product=instance)
         )
-        delete_with_photos(instance, photos)
+        with self.audit_delete(instance):
+            delete_with_photos(instance, photos)
 
 
-class DisplayProductImageViewSet(viewsets.ModelViewSet):
+class DisplayProductImageViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
     """
     Photos arrive one at a time as multipart, after their owner exists — a
     product or part has to have an id before a file can point at it.
@@ -94,13 +97,15 @@ class DisplayProductImageViewSet(viewsets.ModelViewSet):
         serializer.save(
             is_main=serializer.validated_data.get("is_main", False) or first
         )
+        self.audit_create(serializer.instance)
 
     def perform_destroy(self, instance):
-        instance.image.delete(save=False)
-        instance.delete()
+        with self.audit_delete(instance):
+            instance.image.delete(save=False)
+            instance.delete()
 
 
-class PackTemplateViewSet(viewsets.ModelViewSet):
+class PackTemplateViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
     queryset = PackTemplate.objects.select_related("merchant").prefetch_related(
         "items__product", "items__part"
     )
@@ -108,6 +113,7 @@ class PackTemplateViewSet(viewsets.ModelViewSet):
     filterset_fields = ["is_library", "is_active", "merchant"]
     search_fields = ["code", "name"]
     ordering_fields = ["code", "created_at"]
+    audit_related = ("items",)
 
     def perform_destroy(self, instance):
         # PackStep protects its template, so deleting one already packed would
@@ -124,7 +130,7 @@ class PackTemplateViewSet(viewsets.ModelViewSet):
                     )
                 }
             )
-        instance.delete()
+        super().perform_destroy(instance)
 
     def update(self, request, *args, **kwargs):
         """
@@ -182,7 +188,7 @@ class PackTemplateViewSet(viewsets.ModelViewSet):
         return sorted(template.items.values_list("product_id", "part_id", "quantity"))
 
 
-class DisplayOrderViewSet(viewsets.ModelViewSet):
+class DisplayOrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
     queryset = (
         DisplayOrder.objects.select_related("merchant")
         .prefetch_related(
@@ -194,35 +200,35 @@ class DisplayOrderViewSet(viewsets.ModelViewSet):
     filterset_fields = ["status", "merchant"]
     search_fields = ["number", "name", "buyer_name"]
     ordering_fields = ["created_at", "number"]
+    audit_related = ("lines", "rates")
 
     def update(self, request, *args, **kwargs):
         """
         Lines can be added at any time; the serializer refuses to remove or
         reduce one that is already in cartons.
         """
-        order = self.get_object()
-
-        if order.status == DisplayOrderStatus.SHIPPED:
+        if self.get_object().status == DisplayOrderStatus.SHIPPED:
             return Response(
                 {"detail": "This order has already shipped."},
                 status=status.HTTP_409_CONFLICT,
             )
+        return super().update(request, *args, **kwargs)
 
-        before = self._demand_signature(order)
-        response = super().update(request, *args, **kwargs)
-        order.refresh_from_db()
+    def perform_update(self, serializer):
+        order = serializer.instance
+        # One audited write, so the status the edit knocks back is part of it.
+        with self.audit_update(order):
+            before = self._demand_signature(order)
+            serializer.save()
 
-        # A packed order that is asked for something new is not packed any
-        # more — there is now demand no carton answers.
-        if (
-            order.status == DisplayOrderStatus.PACKED
-            and self._demand_signature(order) != before
-        ):
-            order.status = DisplayOrderStatus.PACKING
-            order.save(update_fields=["status", "updated_at"])
-            response.data["status"] = order.status
-
-        return response
+            # A packed order that is asked for something new is not packed any
+            # more — there is now demand no carton answers.
+            if (
+                order.status == DisplayOrderStatus.PACKED
+                and self._demand_signature(order) != before
+            ):
+                order.status = DisplayOrderStatus.PACKING
+                order.save(update_fields=["status", "updated_at"])
 
     @staticmethod
     def _demand_signature(order):

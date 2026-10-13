@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from . import services
+from apps.audit.mixins import AuditedViewSetMixin
 from apps.common import invoice_sheet as invoice_kit
 from apps.common import packing_sheet as sheet_kit
 
@@ -24,7 +25,7 @@ from .serializers import (
 )
 
 
-class OrderViewSet(viewsets.ModelViewSet):
+class OrderViewSet(AuditedViewSetMixin, viewsets.ModelViewSet):
     queryset = (
         Order.objects.select_related("merchant")
         .prefetch_related("lines__product", "cartons__contents")
@@ -34,6 +35,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     filterset_fields = ["status", "merchant"]
     search_fields = ["number", "name", "buyer_name"]
     ordering_fields = ["created_at", "number"]
+    audit_related = ("lines",)
 
     # ── Packing workspace ────────────────────────────────────────────
 
