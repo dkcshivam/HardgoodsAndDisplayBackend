@@ -5,6 +5,7 @@ from decimal import Decimal
 from io import BytesIO
 
 from django.conf import settings
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APITestCase
@@ -1485,6 +1486,43 @@ class DisplayProductImageTests(APITestCase):
 
         self.assertEqual(len(response.data["images"]), 1)
         self.assertIn("/media/display/products/", response.data["images"][0]["image"])
+
+
+@override_settings(STORAGES=local_storage(tempfile.mkdtemp()))
+class DisplayProductDeleteTests(APITestCase):
+    def setUp(self):
+        self.arch = DisplayProduct.objects.create(
+            style_no="DSP-ARC-84", description='84" Garden Arch', is_multi_part=True
+        )
+        self.post = DisplayProductPart.objects.create(product=self.arch, name="Post")
+
+    def delete(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.client.delete(f"/api/display-products/{self.arch.pk}/")
+
+    def test_an_unused_product_goes_with_its_parts_and_photo_files(self):
+        for owner in ({"product": self.arch.pk}, {"part": self.post.pk}):
+            self.client.post(
+                "/api/display-product-images/",
+                {"image": upload(), **owner},
+                format="multipart",
+            )
+        files = [photo.image.name for photo in DisplayProductImage.objects.all()]
+        self.assertEqual(len(files), 2)
+
+        self.assertEqual(self.delete().status_code, 204)
+        self.assertFalse(DisplayProductPart.objects.exists())
+        self.assertFalse(DisplayProductImage.objects.exists())
+        self.assertFalse(any(default_storage.exists(name) for name in files))
+
+    def test_a_product_in_a_template_is_kept_and_the_template_named(self):
+        template("T-ARCH", [(self.arch, 1)])
+
+        response = self.delete()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("T-ARCH", response.data["detail"])
+        self.assertTrue(DisplayProduct.objects.filter(pk=self.arch.pk).exists())
 
 
 class DisplayStyleNameTests(APITestCase):

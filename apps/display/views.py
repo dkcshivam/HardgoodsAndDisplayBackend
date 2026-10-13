@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import Q
 from django.http import FileResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -8,6 +9,7 @@ from rest_framework.response import Response
 from . import services
 from apps.common import invoice_sheet as invoice_kit
 from apps.common import packing_sheet as sheet_kit
+from apps.common.deletion import delete_with_photos, refuse_if_used
 
 from .exports import (
     build_invoice,
@@ -50,6 +52,25 @@ class DisplayProductViewSet(viewsets.ModelViewSet):
     filterset_fields = ["status", "category", "is_multi_part"]
     search_fields = ["style_no", "style_name", "description"]
     ordering_fields = ["style_no", "created_at"]
+
+    def perform_destroy(self, instance):
+        refuse_if_used(
+            instance,
+            orders=[
+                *instance.order_lines.values_list("order__number", flat=True),
+                *instance.order_rates.values_list("order__number", flat=True),
+                *instance.carton_contents.values_list(
+                    "carton__order__number", flat=True
+                ),
+            ],
+            templates=instance.template_items.values_list(
+                "template__code", flat=True
+            ),
+        )
+        photos = DisplayProductImage.objects.filter(
+            Q(product=instance) | Q(part__product=instance)
+        )
+        delete_with_photos(instance, photos)
 
 
 class DisplayProductImageViewSet(viewsets.ModelViewSet):

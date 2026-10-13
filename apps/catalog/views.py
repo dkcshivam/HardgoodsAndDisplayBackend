@@ -1,4 +1,7 @@
+from django.db.models import Q
 from rest_framework import viewsets
+
+from apps.common.deletion import delete_with_photos, refuse_if_used
 
 from .models import Product, ProductImage
 from .serializers import (
@@ -31,6 +34,21 @@ class ProductViewSet(viewsets.ModelViewSet):
         if self.action == "list":
             return ProductListSerializer
         return ProductSerializer
+
+    def perform_destroy(self, instance):
+        refuse_if_used(
+            instance,
+            orders=[
+                *instance.order_lines.values_list("order__number", flat=True),
+                *instance.carton_contents.values_list(
+                    "carton__order__number", flat=True
+                ),
+            ],
+        )
+        photos = ProductImage.objects.filter(
+            Q(product=instance) | Q(part__product=instance)
+        )
+        delete_with_photos(instance, photos)
 
 
 class ProductImageViewSet(viewsets.ModelViewSet):

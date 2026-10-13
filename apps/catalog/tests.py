@@ -1,11 +1,14 @@
 import base64
 import tempfile
 
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from apps.common.testing import local_storage
+from apps.masters.models import Merchant
+from apps.orders.models import Order, OrderLine
 
 from .models import Product, ProductImage, ProductPart
 
@@ -171,6 +174,44 @@ class ProductPhotoTests(APITestCase):
         row = response.data["results"][0]
 
         self.assertIn("/media/products/", row["main_image"])
+
+
+@override_settings(STORAGES=local_storage(tempfile.mkdtemp()))
+class ProductDeleteTests(APITestCase):
+    def setUp(self):
+        self.table = Product.objects.create(
+            style_no="TBL-01", description="Table", is_multi_part=True
+        )
+        self.top = ProductPart.objects.create(product=self.table, name="Top")
+
+    def delete(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.client.delete(f"/api/products/{self.table.pk}/")
+
+    def test_an_unused_product_goes_with_its_parts_and_photo_files(self):
+        for owner in ({"product": self.table.pk}, {"part": self.top.pk}):
+            self.client.post(
+                "/api/product-images/", {"image": upload(), **owner}, format="multipart"
+            )
+        files = [photo.image.name for photo in ProductImage.objects.all()]
+        self.assertEqual(len(files), 2)
+
+        self.assertEqual(self.delete().status_code, 204)
+        self.assertFalse(ProductPart.objects.exists())
+        self.assertFalse(ProductImage.objects.exists())
+        self.assertFalse(any(default_storage.exists(name) for name in files))
+
+    def test_a_product_on_an_order_is_kept_and_the_order_named(self):
+        order = Order.objects.create(
+            name="Spring", merchant=Merchant.objects.create(code="UO", name="Urban")
+        )
+        OrderLine.objects.create(order=order, product=self.table, quantity=1)
+
+        response = self.delete()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(order.number, response.data["detail"])
+        self.assertTrue(Product.objects.filter(pk=self.table.pk).exists())
 
 
 class ProductStyleNameTests(APITestCase):

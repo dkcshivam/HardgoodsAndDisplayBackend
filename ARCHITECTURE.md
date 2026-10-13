@@ -691,7 +691,7 @@ Base: `/api/`. DRF `PageNumberPagination`, page size 50.
 |---|---|---|
 | `/categories/` | CRUD | |
 | `/merchants/` | CRUD | |
-| `/products/` | CRUD | light serializer on list (carries `main_image`), full on detail; parts written in the same request |
+| `/products/` | CRUD | light serializer on list (carries `main_image`), full on detail; parts written in the same request. DELETE takes parts and photos (files too) with it; a product on any order is refused with a 400 naming the orders |
 | `/product-images/` | POST | multipart: `image` plus `product` **or** `part` |
 | `/product-images/{id}/` | PATCH, DELETE | `is_main` promotion; delete removes the file too |
 | `/orders/` | CRUD | nested `lines` (each with `color`); `shipping_address` nested on read and write |
@@ -711,7 +711,7 @@ itself in a single response.
 
 | Endpoint | Methods | Notes |
 |---|---|---|
-| `/display-products/` | CRUD | own catalogue; no box, no parts |
+| `/display-products/` | CRUD | own catalogue; no box, no parts. DELETE as Hardgoods, also refused while a template holds it |
 | `/pack-templates/` | CRUD | items written in the same request; `?is_library=true` for the picker |
 | `/stores/` | CRUD | outlets under a merchant; `?merchant=` for one chain's |
 | `/display-orders/` | CRUD | nested `lines`, each naming a `store` |
