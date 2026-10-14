@@ -369,6 +369,36 @@ The two halves meet only in the browser: the frontend calls
 is needed. What binds them is CORS — the backend's `CORS_ALLOWED_ORIGINS` must
 list wherever the frontend runs.
 
+### D10 — An append-only audit trail, written in the request's transaction
+
+Every write through the API leaves one `audit.AuditEvent`: who, when, which
+action, on which record, and `changes` as `{field: [before, after]}`. What a
+save writes alongside its record — a product's parts, an order's lines, a
+template's items — belongs to that record's event, which lists only the rows
+lost and the rows gained, so one changed line of five hundred records as one.
+Packing saves, auto-pack, steps and copies record a summary, never the boxes:
+a 1 200-carton save is one small row.
+
+*Append-only, twice (D6).* The model refuses to save an existing event or to
+delete one; a Postgres trigger refuses `UPDATE` and `DELETE` on the table for
+whatever goes around the ORM. A trail its readers can edit proves nothing.
+
+*In the request's transaction* (`ATOMIC_REQUESTS`), not after it: a request
+that fails leaves neither its change nor its event, and one that succeeds
+always has both. A trail written separately could claim an edit that rolled
+back, or miss one that stuck.
+
+*`actor` is `PROTECT`.* Users are deactivated, never deleted (§9), and an event
+must go on naming its author; `actor_name` keeps what they were called at the
+time. The admin refusing to delete a user who has events is intended.
+
+*Never recorded:* passwords and tokens — a changed password reads
+`["***", "***"]` — or timestamps that every save moves, such as `updated_at`.
+
+*Not covered:* edits made in the Django admin, which keeps its own history
+(`LogEntry`, each record's History page), and management commands such as the
+seed scripts, which write below the API. Both need the server already.
+
 ---
 
 ## 7. Business rules
@@ -772,7 +802,7 @@ username, and `password` is write-only.
 - **401 or 403.** 401 is "who are you?": no token, a bad or expired one, an
   inactive user, or a password changed since the token was issued — the token
   carries a hash of it. 403 is "not you": signed in, but the role is not
-  allowed. Today only non-admins on `/users/` get a 403.
+  allowed. Today only non-admins on `/users/` and `/audit-events/` get a 403.
 - **Users are never deleted**, only deactivated, so whatever they recorded
   still names someone. Deactivating one ends their sessions at once.
 
@@ -782,13 +812,14 @@ users and Django cannot swap the model under existing rows.
 
 | Role | Label | May use |
 |---|---|---|
-| `admin` | Admin | everything, and `/users/` |
-| `senior_merchant` | Senior Merchant | everything but `/users/` |
-| `merchant` | Merchant | everything but `/users/` |
+| `admin` | Admin | everything, and `/users/` and `/audit-events/` |
+| `senior_merchant` | Senior Merchant | everything but `/users/` and `/audit-events/` |
+| `merchant` | Merchant | everything but `/users/` and `/audit-events/` |
 
 **Permissions per role are not decided yet** (§11): every signed-in user can
-use the whole API, and only `/users/` is admin-only. The checks live in
-`apps/accounts/permissions.py`, ready for the rules when they come.
+use the whole API, and only `/users/` and `/audit-events/` are admin-only. The
+checks live in `apps/accounts/permissions.py`, ready for the rules when they
+come.
 
 A Django superuser is an admin whatever its profile says. A new account gets
 its profile when first saved — a superuser as admin, anyone else as merchant —
@@ -797,6 +828,37 @@ and a `CheckConstraint` keeps the role to the three values (D6).
 User-management guards, each a 400: an admin cannot deactivate themselves or
 change their own role; the last active admin cannot be deactivated or demoted;
 only a superuser can change a superuser's account, and a superuser stays admin.
+
+### Audit trail
+
+Read-only and admin only; written as described in D10.
+
+| Endpoint | Methods | Notes |
+|---|---|---|
+| `/audit-events/` | GET | newest first. `?actor=` (user id), `?action=`, `?target_type=` and `?target_id=` (one record's history), `?search=` over `target_repr` and `actor_name`, `?created_after=` / `?created_before=` |
+| `/audit-events/{id}/` | GET | one event |
+
+An event is `id, created_at, actor, actor_name, action, action_label,
+target_type, target_label, target_id, target_repr, changes`. `target_type` is
+`app_label.model` (`orders.order`, `auth.user`), `target_label` its model's name
+("Order", "Display Product"), `target_id` a string, and `target_repr` what the
+record was called at the time — an order number, a style number, a username.
+`changes` is JSON-safe: decimals and dates as strings, foreign keys as ids;
+`before` is null on create and `after` null on delete. The date filters take
+`YYYY-MM-DD`, whole days in the project time zone, both ends included.
+
+| Action | Label | Recorded by | `changes` |
+|---|---|---|---|
+| `create`, `update`, `delete` | Created, Updated, Deleted | every CRUD endpoint, `/users/`, `/auth/password/` | the fields that differ. A nested collection lists the rows it lost, then those it gained. An edit that changes nothing records nothing; a refused delete, nothing either |
+| `advance_status` | Advanced status | `advance-status/`, either order | `status` |
+| `save_packing` | Saved packing | `PUT /orders/{id}/packing/` | `carton_count`, `total_gross_weight_kg`; `status` if the save moved it |
+| `auto_pack` | Auto-packed | `/orders/{id}/auto-pack/` | as `save_packing` |
+| `add_step`, `update_step`, `delete_step` | Added step, Changed step, Removed step | `/display-orders/{id}/steps/…` | `sequence`, `store`, `template` (its code), `count`; `status` if the first step moved it |
+| `replicate` | Copied plan | `/display-orders/{id}/replicate/` | `store` copied from, `replicated_to` |
+| `login`, `logout` | Logged in, Logged out | `/auth/login/` (success only), `/auth/logout/` | none; the target is the user |
+
+The order actions target the order, and give each value as `[before, after]`
+even when it did not move: saving three cartons over three is still a save.
 
 ---
 
