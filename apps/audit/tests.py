@@ -1,6 +1,7 @@
 import base64
 import json
 import tempfile
+from datetime import datetime
 from decimal import Decimal
 from unittest import mock
 
@@ -10,11 +11,12 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, connection, transaction
 from django.db.models import ProtectedError
 from django.test import TestCase, override_settings
-from rest_framework.test import APITestCase
+from django.urls import reverse
+from rest_framework.test import APIClient, APITestCase
 
 from apps.accounts.models import Role
 from apps.catalog.models import Product
-from apps.common.testing import SignedInAPITestCase, local_storage, make_user
+from apps.common.testing import SignedInAPITestCase, local_storage, make_user, sign_in
 from apps.display import services as display_services
 from apps.display.models import (
     DisplayOrder,
@@ -711,3 +713,154 @@ class SessionTests(APITestCase):
     def test_a_failed_login_is_not_recorded(self):
         self.assertEqual(self.login("not-the-password").status_code, 401)
         self.assertFalse(AuditEvent.objects.exists())
+
+
+class EndpointTests(AuditedTestCase):
+    role = Role.ADMIN
+    URL = "/api/audit-events/"
+
+    def ids(self, query=None):
+        response = self.client.get(self.URL, query or {})
+        self.assertEqual(response.status_code, 200, response.data)
+        return [row["id"] for row in response.data["results"]]
+
+    def test_only_an_admin_may_read_the_trail(self):
+        for role in (Role.MERCHANT, Role.SENIOR_MERCHANT):
+            with self.subTest(role=role):
+                client = APIClient()
+                sign_in(client, role)
+                self.assertEqual(client.get(self.URL).status_code, 403)
+        self.assertEqual(APIClient().get(self.URL).status_code, 401)
+
+    def test_an_event_reads_as_the_contract_has_it(self):
+        self.client.post("/api/categories/", {"name": "Lighting"}, format="json")
+
+        response = self.client.get(self.URL)
+        self.assertEqual(response.data["count"], 1)
+        row = response.data["results"][0]
+        self.assertEqual(
+            {key: value for key, value in row.items() if key not in ("id", "created_at")},
+            {
+                "actor": self.user.pk,
+                "actor_name": self.user.username,
+                "action": "create",
+                "action_label": "Created",
+                "target_type": "masters.category",
+                "target_label": "Category",
+                "target_id": str(Category.objects.get().pk),
+                "target_repr": "Lighting",
+                "changes": {"name": [None, "Lighting"], "is_active": [None, True]},
+            },
+        )
+        self.assertTrue(row["created_at"].endswith("+05:30"), row["created_at"])
+        self.assertEqual(self.client.get(f"{self.URL}{row['id']}/").data, row)
+
+    def test_the_target_label_is_the_models_name(self):
+        for target_type, label in (
+            ("orders.order", "Order"),
+            ("display.displayproduct", "Display Product"),
+            ("catalog.productimage", "Product Image"),
+            ("auth.user", "User"),
+            ("gone.model", "gone.model"),
+        ):
+            with self.subTest(target_type=target_type):
+                self.assertEqual(AuditEvent(target_type=target_type).target_label, label)
+
+    def test_the_trail_cannot_be_written_through_the_api(self):
+        recorded = event()
+        self.assertEqual(self.client.post(self.URL, {}, format="json").status_code, 405)
+        self.assertEqual(self.client.delete(f"{self.URL}{recorded.pk}/").status_code, 405)
+        self.assertEqual(
+            self.client.patch(f"{self.URL}{recorded.pk}/", {}, format="json").status_code,
+            405,
+        )
+
+    def test_newest_first_and_filtered(self):
+        ravi = make_user(username="ravi", first_name="Ravi")
+        created = event(
+            actor=self.user,
+            actor_name="Asha Rao",
+            action=Action.CREATE,
+            target_type="orders.order",
+            target_id="42",
+            target_repr="HG-2026-0042",
+        )
+        renamed = event(actor=ravi, actor_name="Ravi", target_id="7")
+        shipped = event(
+            actor=ravi,
+            actor_name="Ravi",
+            action=Action.ADVANCE_STATUS,
+            target_type="orders.order",
+            target_id="42",
+            target_repr="HG-2026-0042",
+        )
+
+        self.assertEqual(self.ids(), [shipped.pk, renamed.pk, created.pk])
+        self.assertEqual(self.ids({"actor": ravi.pk}), [shipped.pk, renamed.pk])
+        self.assertEqual(self.ids({"action": "update"}), [renamed.pk])
+        self.assertEqual(
+            self.ids({"target_type": "orders.order", "target_id": "42"}),
+            [shipped.pk, created.pk],
+        )
+        self.assertEqual(self.ids({"search": "ravi"}), [shipped.pk, renamed.pk])
+        self.assertEqual(self.ids({"search": "hg-2026"}), [shipped.pk, created.pk])
+        self.assertEqual(self.client.get(self.URL, {"action": "erase"}).status_code, 400)
+
+    def test_an_orders_history_is_found_by_its_type_and_id(self):
+        order = DisplayOrder.objects.create(name="Holiday", merchant=merchant())
+        self.client.post(f"/api/display-orders/{order.pk}/advance-status/")
+        event(target_type="display.displayorder", target_id=str(order.pk + 1))
+
+        response = self.client.get(
+            self.URL, {"target_type": "display.displayorder", "target_id": order.pk}
+        )
+
+        self.assertEqual(
+            [(row["action"], row["target_repr"]) for row in response.data["results"]],
+            [("advance_status", order.number)],
+        )
+
+    def test_dates_are_whole_days_in_the_project_time_zone(self):
+        def at(moment):
+            with mock.patch(
+                "django.utils.timezone.now", return_value=datetime.fromisoformat(moment)
+            ):
+                return event()
+
+        # Both fall on the 12th in UTC; in Delhi the second is already the 13th.
+        late = at("2026-10-12T23:30:00+05:30")
+        early = at("2026-10-13T00:30:00+05:30")
+
+        self.assertEqual(self.ids({"created_before": "2026-10-12"}), [late.pk])
+        self.assertEqual(self.ids({"created_after": "2026-10-13"}), [early.pk])
+        self.assertEqual(
+            self.ids({"created_after": "2026-10-12", "created_before": "2026-10-12"}),
+            [late.pk],
+        )
+        self.assertEqual(
+            self.ids({"created_after": "2026-10-12", "created_before": "2026-10-13"}),
+            [early.pk, late.pk],
+        )
+
+
+@override_settings(STORAGES=local_storage(tempfile.mkdtemp()))
+class AdminTests(TestCase):
+    def setUp(self):
+        root = get_user_model().objects.create_superuser("root", "root@example.com", "x")
+        self.client.force_login(root)
+        self.event = event(actor=root, actor_name="root")
+
+    def test_the_admin_shows_events_and_cannot_add_change_or_delete_them(self):
+        changelist = self.client.get(reverse("admin:audit_auditevent_changelist"))
+        self.assertContains(changelist, "Lighting")
+
+        page = self.client.get(reverse("admin:audit_auditevent_change", args=[self.event.pk]))
+        self.assertEqual(page.status_code, 200)
+        self.assertNotContains(page, 'name="_save"')
+
+        self.assertEqual(
+            self.client.get(reverse("admin:audit_auditevent_add")).status_code, 403
+        )
+        delete = reverse("admin:audit_auditevent_delete", args=[self.event.pk])
+        self.assertEqual(self.client.post(delete, {"post": "yes"}).status_code, 403)
+        self.assertTrue(AuditEvent.objects.filter(pk=self.event.pk).exists())
